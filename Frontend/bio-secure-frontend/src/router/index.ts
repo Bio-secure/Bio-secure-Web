@@ -6,7 +6,7 @@ import MainMenu from '../view/MainMenu.vue'
 const routes = [
   {
     path: '/',
-    name: 'MainMenu',
+    name: 'mainmenu',
     component: MainMenu
   },
 ]
