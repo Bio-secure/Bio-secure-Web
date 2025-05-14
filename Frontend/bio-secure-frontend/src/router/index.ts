@@ -1,10 +1,12 @@
-// src/router/index.ts
-
 import { createRouter, createWebHistory} from 'vue-router'
+
 import MainMenu from '../view/MainMenu.vue'
+// @ts-ignore
 import Register from '../view/Register.vue'
+// @ts-ignore
 import Identify from '../view/Identify.vue'
 import Monitor from '../view/Monitor.vue'
+import InfoPage from '../view/InfoPage.vue'
 
 const routes = [
   {
@@ -26,6 +28,11 @@ const routes = [
     path: '/monitor',
     name: 'monitor',
     component: Monitor
+  },
+  {
+    path: '/infopage',
+    name: 'infopage',
+    component: InfoPage
   },
 ]
 

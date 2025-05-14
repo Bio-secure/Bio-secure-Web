@@ -36,8 +36,8 @@ export default {
     async fetchRegistrations() {
       // Replace this with real API call
       this.registrations = [
-        { id: 1, date: '20/04/2568', time: '3:00 PM', name: 'Anuphap manotam', balance: 1000000 },
-        { id: 2, date: '20/04/2568', time: '10:00 AM', name: 'Anuphap manotam', balance: 1000000 },
+        { id: 1, date: '20/04/2568', time: '3:00 PM', name: 'Anuphat manotam', balance: 1000000 },
+        { id: 2, date: '20/04/2568', time: '10:00 AM', name: 'Anuphat manotam', balance: 1000000 },
         { id: 3, date: '19/04/2568', time: '11:00 AM', name: 'Philip Housden', balance: 1000000 },
       ];
     },
@@ -141,7 +141,7 @@ export default {
       <img
         src="../assets/pawat.png"
         alt="User"
-        class="w-28 h-28 rounded-full object-cover border-4 border-blue-100 shadow mb-4"
+        class="w-28 h-28 rounded-full object-cover border-2 border-black shadow mb-4"
       />
       <span class="bg-blue-500 text-white text-xs px-3 py-1 rounded-full mb-2">Manager</span>
       <p class="text-lg font-semibold text-center mb-6">Pawat MungMueng</p>
