@@ -54,7 +54,7 @@ export default {
 </script>
 
 <template>
-  <div class="flex h-screen bg-gray-50 text-gray-800">
+  <div class="flex h-screen text-gray-800">
     <!-- Main Dashboard Content -->
     <div class="flex-1 p-6 grid grid-cols-1 lg:grid-cols-2 gap-6 overflow-auto">
       <!-- Access Event Table -->

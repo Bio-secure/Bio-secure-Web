@@ -80,7 +80,7 @@ export default defineComponent({
 </script>
 
 <template>
-  <div class="flex flex-col lg:flex-row gap-6 p-6 bg-gray-100 min-h-screen">
+  <div class="flex flex-col lg:flex-row gap-6 p-6 min-h-screen">
     <!-- Left Panel -->
     <div class="flex-1 bg-white rounded-xl shadow p-6">
       <!-- Profile & Balance -->

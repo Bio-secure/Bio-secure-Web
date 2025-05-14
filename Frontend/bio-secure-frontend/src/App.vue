@@ -3,25 +3,43 @@ import NavBar from './components/NavBar.vue';
 </script>
 
 <template>
-  <header>
-    <NavBar />
-  </header>
-  <div>
-    <RouterView />
+  <div class="app-container">
+    <!-- Faint background image layer -->
+    <div class="background-image"></div>
+
+    <!-- Foreground content -->
+    <div class="content">
+      <header>
+        <NavBar />
+      </header>
+      <RouterView />
+    </div>
   </div>
 </template>
 
 <style scoped>
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
+.app-container {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
 }
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
+
+.background-image {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image: url('./assets/bank.jpg');
+  background-size: cover;
+  background-position: center;
+  opacity: 0.15; /* Faint effect */
+  z-index: 0;
+  pointer-events: none;
 }
-.logo.vue:hover {
-  filter: drop-shadow(0 0 2em #42b883aa);
+
+.content {
+  position: relative;
+  z-index: 1; /* Places it above the image */
 }
 </style>

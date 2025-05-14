@@ -16,7 +16,7 @@ function verify() {
 </script>
 
 <template>
-  <div class="flex flex-col items-center justify-center min-h-screen bg-gray-200 space-y-12">
+  <div class="flex flex-col items-center justify-center min-h-screen space-y-12">
     <!-- Scan options -->
     <div class="flex space-x-16">
       <!-- Face recognition -->

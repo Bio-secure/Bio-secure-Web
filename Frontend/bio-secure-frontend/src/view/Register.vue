@@ -23,7 +23,7 @@ export default {
 </script>
 
 <template>
-  <div class="flex items-center bg-gray-200 justify-center min-h-screen">
+  <div class="flex items-center justify-center min-h-screen">
     <div class="w-full max-w-4xl p-12 rounded-2xl bg-white shadow-2xl">
       <!-- Header -->
       <h2 class="text-3xl font-bold text-center text-blue-900 mb-10">User Registration</h2>
