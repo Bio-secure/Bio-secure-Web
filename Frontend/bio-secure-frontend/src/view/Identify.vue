@@ -49,7 +49,7 @@ function connectIrisCamera() {
 </script>
 
 <template>
-  <div class="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200 py-12 px-4 flex flex-col items-center space-y-10">
+  <div class="min-h-screen from-slate-100 to-slate-200 py-12 px-4 flex flex-col items-center space-y-10">
     <h1 class="text-3xl font-bold text-gray-800">Personal identify</h1>
 
     <!-- Hidden file input -->
