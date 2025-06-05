@@ -24,7 +24,7 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # Serve image folders
 app.mount("/uploads", StaticFiles(directory=UPLOAD_FOLDER), name="uploads")
-app.mount("/assets", StaticFiles(directory=ASSET_FOLDER), name="assets")
+app.mount("/assets", StaticFiles(directory=ASSET_FOLDER), name="asset")
 
 # Test route
 @app.get("/")

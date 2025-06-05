@@ -1,0 +1,6 @@
+deepface
+tf-keras
+python-multipart
+fastapi[standard]
+uvicorn
+nest-asyncio
