@@ -9,7 +9,8 @@ export default {
         gender: '',
         birthDate: '',
         nationalId: '',
-        phoneNo: ''
+        phoneNo: '',
+        email: ''
       }
     }
   },
@@ -90,6 +91,17 @@ export default {
         <div class="mb-8">
           <div class="flex items-center">
             <label class="w-32 text-base text-gray-800 font-semibold">Phone No.</label>
+            <input
+              type="tel"
+              v-model="formData.phoneNo"
+              class="flex-1 px-4 py-3 border border-gray-300 bg-white shadow-sm rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-300"
+            />
+          </div>
+        </div>
+
+        <div class="mb-8">
+          <div class="flex items-center">
+            <label class="w-32 text-base text-gray-800 font-semibold">Email</label>
             <input
               type="tel"
               v-model="formData.phoneNo"
