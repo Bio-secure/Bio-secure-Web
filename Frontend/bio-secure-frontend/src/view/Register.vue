@@ -1,4 +1,6 @@
 <script>
+import { supabase } from '../main'; // adjust path as needed
+
 export default {
   name: 'UserInfoForm',
   data() {
@@ -10,26 +12,57 @@ export default {
         birthDate: '',
         nationalId: '',
         phoneNo: '',
-        email: ''
+        email: '',
+        balance: ''
       }
-    }
+    };
   },
   methods: {
-    handleSubmit() {
-      console.log('Form submitted:', this.formData);
-      // Here you would typically send the data to your backend or navigate to the next page
+    async handleSubmit() {
+      const payload = {
+        "National ID": this.formData.nationalId ? parseInt(this.formData.nationalId) : undefined,
+        "Name": this.formData.firstName,
+        "SurName": this.formData.lastName,
+        "BirthDate": this.formData.birthDate,
+        "PhoneNo": this.formData.phoneNo ? parseInt(this.formData.phoneNo) : null,
+        "Gender": this.formData.gender,
+        "DOR": new Date().toISOString(),
+        "Email": this.formData.email || null,
+        "Balance": this.formData.balance
+      };
+
+      const { data, error } = await supabase.from('Customer').insert([payload]);
+
+      if (error) {
+        console.error('Supabase error:', error);
+        alert('Failed to save data: ' + error.message);
+      } else {
+        console.log('Inserted:', data);
+        alert('User registered successfully!');
+        this.resetForm();
+      }
+    },
+    resetForm() {
+      this.formData = {
+        firstName: '',
+        lastName: '',
+        gender: '',
+        birthDate: '',
+        nationalId: '',
+        phoneNo: '',
+        email: ''
+      };
     }
   }
-}
+};
 </script>
 
 <template>
   <div class="flex items-center justify-center min-h-screen">
     <div class="w-full max-w-4xl p-12 rounded-2xl bg-white shadow-2xl">
-      <!-- Header -->
       <h2 class="text-3xl font-bold text-center text-blue-900 mb-10">User Registration</h2>
 
-      <!-- User Information Form -->
+      <!-- Form Starts -->
       <div>
         <!-- Name -->
         <div class="mb-8">
@@ -99,18 +132,30 @@ export default {
           </div>
         </div>
 
+        <!-- Email -->
         <div class="mb-8">
           <div class="flex items-center">
             <label class="w-32 text-base text-gray-800 font-semibold">Email</label>
             <input
-              type="tel"
-              v-model="formData.phoneNo"
+              type="email"
+              v-model="formData.email"
               class="flex-1 px-4 py-3 border border-gray-300 bg-white shadow-sm rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-300"
             />
           </div>
         </div>
 
-        <!-- Next Button -->
+        <div class="mb-8">
+          <div class="flex items-center">
+            <label class="w-32 text-base text-gray-800 font-semibold">Balance</label>
+            <input
+              type="text"
+              v-model="formData.balance"
+              class="flex-1 px-4 py-3 border border-gray-300 bg-white shadow-sm rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-300"
+            />
+          </div>
+        </div>
+
+        <!-- Submit Button -->
         <div class="flex justify-center mt-10">
           <button
             @click="handleSubmit"
