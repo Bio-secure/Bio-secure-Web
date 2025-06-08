@@ -34,12 +34,22 @@ async function verify() {
       method: "POST",
       body: formData
     });
+
+    if (!res.ok) {
+      if (res.status === 500) {
+        result.value = "Error: Something went wrong. Status 500."
+      } else {
+        result.value = `Error: ${res.status} ${res.statusText}`
+      }
+      return
+    }
+
     const data = await res.json();
     result.value = data.identity || "No match found";
     matchImageUrl.value = data.image_url || null;
   } catch (err) {
-    console.error(err);
-    result.value = "Error during verification";
+    console.error("Network or unexpected error:", err);
+    result.value = "Error during verification.";
   }
 }
 
