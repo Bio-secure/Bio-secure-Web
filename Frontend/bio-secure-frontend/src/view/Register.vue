@@ -1,5 +1,4 @@
 <script>
-import { supabase } from '../main'; // adjust path as needed
 
 export default {
   name: 'UserInfoForm',
@@ -20,26 +19,43 @@ export default {
   methods: {
     async handleSubmit() {
       const payload = {
-        "National ID": this.formData.nationalId ? parseInt(this.formData.nationalId) : undefined,
-        "Name": this.formData.firstName,
-        "SurName": this.formData.lastName,
-        "BirthDate": this.formData.birthDate,
-        "PhoneNo": this.formData.phoneNo ? parseInt(this.formData.phoneNo) : null,
-        "Gender": this.formData.gender,
-        "DOR": new Date().toISOString(),
-        "Email": this.formData.email || null,
-        "Balance": this.formData.balance
+        firstName: this.formData.firstName,
+        lastName: this.formData.lastName,
+        gender: this.formData.gender,
+        birthDate: this.formData.birthDate,
+        nationalId: this.formData.nationalId,
+        phoneNo: this.formData.phoneNo,
+        email: this.formData.email,
+        balance: this.formData.balance
       };
 
-      const { data, error } = await supabase.from('Customer').insert([payload]);
+      try {
+        // Access environment variable for base URL
+        // For Vue CLI: process.env.VUE_APP_API_BASE_URL
+        // For Vite: import.meta.env.VITE_API_BASE_URL
+        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'; // Default fallback
+        // If using Vue CLI, use: const API_BASE_URL = process.env.VUE_APP_API_BASE_URL || 'http://localhost:8000';
 
-      if (error) {
-        console.error('Supabase error:', error);
-        alert('Failed to save data: ' + error.message);
-      } else {
-        console.log('Inserted:', data);
+        const response = await fetch(`${API_BASE_URL}/register-user`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.detail || 'Failed to register user');
+        }
+
+        const result = await response.json();
+        console.log('Inserted:', result);
         alert('User registered successfully!');
         this.resetForm();
+      } catch (error) {
+        console.error('Error saving data:', error);
+        alert('Failed to save data: ' + error.message);
       }
     },
     resetForm() {
@@ -50,7 +66,8 @@ export default {
         birthDate: '',
         nationalId: '',
         phoneNo: '',
-        email: ''
+        email: '',
+        balance: ''
       };
     }
   }
@@ -62,9 +79,7 @@ export default {
     <div class="w-full max-w-4xl p-12 rounded-2xl bg-white shadow-2xl">
       <h2 class="text-3xl font-bold text-center text-blue-900 mb-10">User Registration</h2>
 
-      <!-- Form Starts -->
       <div>
-        <!-- Name -->
         <div class="mb-8">
           <div class="flex items-center">
             <label class="w-32 text-base text-gray-800 font-semibold">Name</label>
@@ -85,7 +100,6 @@ export default {
           </div>
         </div>
 
-        <!-- Gender and Birth Date -->
         <div class="mb-8">
           <div class="flex items-center">
             <label class="w-32 text-base text-gray-800 font-semibold">Gender</label>
@@ -108,7 +122,6 @@ export default {
           </div>
         </div>
 
-        <!-- National ID -->
         <div class="mb-8">
           <div class="flex items-center">
             <label class="w-32 text-base text-gray-800 font-semibold">National ID</label>
@@ -120,7 +133,6 @@ export default {
           </div>
         </div>
 
-        <!-- Phone Number -->
         <div class="mb-8">
           <div class="flex items-center">
             <label class="w-32 text-base text-gray-800 font-semibold">Phone No.</label>
@@ -132,7 +144,6 @@ export default {
           </div>
         </div>
 
-        <!-- Email -->
         <div class="mb-8">
           <div class="flex items-center">
             <label class="w-32 text-base text-gray-800 font-semibold">Email</label>
@@ -155,7 +166,6 @@ export default {
           </div>
         </div>
 
-        <!-- Submit Button -->
         <div class="flex justify-center mt-10">
           <button
             @click="handleSubmit"
@@ -168,6 +178,3 @@ export default {
     </div>
   </div>
 </template>
-
-
-

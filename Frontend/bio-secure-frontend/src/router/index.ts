@@ -5,6 +5,7 @@ import MainMenu from '../view/MainMenu.vue'
 import Register from '../view/Register.vue'
 // @ts-ignore
 import Identify from '../view/Identify.vue'
+// @ts-ignore
 import Monitor from '../view/Monitor.vue'
 import InfoPage from '../view/InfoPage.vue'
 
