@@ -88,6 +88,13 @@ async def identify_face(image: UploadFile = File(...)):
 @app.post("/register-user")
 async def register_user(user_data: dict):
     try:
+        balance_value = user_data.get("balance")
+        if balance_value is not None:
+            try:
+                balance_value = float(balance_value) if str(balance_value).strip() != '' else None
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Balance must be a valid number.")
+
         payload = {
             "National_ID": int(user_data.get("nationalId")) if user_data.get("nationalId") is not None else None,
             "Name": user_data.get("firstName"),
@@ -95,8 +102,9 @@ async def register_user(user_data: dict):
             "BirthDate": user_data.get("birthDate"),
             "PhoneNo": int(user_data.get("phoneNo")) if user_data.get("phoneNo") is not None else None,
             "Gender": user_data.get("gender"),
-            "DOR": datetime.datetime.now(datetime.timezone.utc).isoformat(), # Date of Registration (UTC)
+            "DOR": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "Email": user_data.get("email") or None,
+            "Balance": balance_value,
         }
 
         print(f"Payload for Supabase: {payload}")
@@ -196,5 +204,4 @@ async def get_registration_stats():
 
     except Exception as e:
         print(f"Error fetching registration stats: {str(e)}")
-        # Re-raise as HTTPException to propagate the error to the frontend
         raise HTTPException(status_code=500, detail=f"Failed to fetch registration stats: {str(e)}")

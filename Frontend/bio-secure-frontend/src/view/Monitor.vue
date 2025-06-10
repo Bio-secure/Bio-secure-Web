@@ -3,8 +3,8 @@ export default {
   name: 'MonitoringDashboard',
   data() {
     return {
-      accessEvents: [],
-      accessSummary: {
+      accessEvents: [], // RESTORED: Access Events data
+      accessSummary: { // RESTORED: Access Summary data
         success: 0,
         denied: 0,
       },
@@ -15,12 +15,12 @@ export default {
         month: 0,
       },
       loading: {
-        accessEvents: true,
+        accessEvents: true, // RESTORED: Loading state for Access Events
         registrations: true,
         registrationStats: true,
       },
       error: {
-        accessEvents: null,
+        accessEvents: null, // RESTORED: Error state for Access Events
         registrations: null,
         registrationStats: null,
       }
@@ -32,7 +32,7 @@ export default {
   methods: {
     async fetchDashboardData() {
       await Promise.all([
-        this.fetchAccessEvents(),
+        this.fetchAccessEvents(), // RESTORED: Call to fetch Access Events
         this.fetchRegistrations(),
         this.fetchRegistrationStats(),
       ]);
@@ -57,6 +57,7 @@ export default {
       }
     },
 
+    // RESTORED: fetchAccessEvents method
     async fetchAccessEvents() {
       this.loading.accessEvents = true;
       this.error.accessEvents = null;
@@ -67,7 +68,7 @@ export default {
         if (!customerLogsResponse.ok) throw new Error(`Failed to fetch customer logs: ${customerLogsResponse.statusText}`);
         const customerLogs = await customerLogsResponse.json();
 
-        const employeeLogsResponse = await await fetch(`${API_BASE_URL}/employee-logs`);
+        const employeeLogsResponse = await fetch(`${API_BASE_URL}/employee-logs`);
         if (!employeeLogsResponse.ok) throw new Error(`Failed to fetch employee logs: ${employeeLogsResponse.statusText}`);
         const employeeLogs = await employeeLogsResponse.json();
 
@@ -112,11 +113,15 @@ export default {
           });
         });
 
+        // Sorting by actual timestamp (assuming BE conversion doesn't break sort)
         combinedEvents.sort((a, b) => {
-            const dateA = new Date(`${a.date.split('/')[1]}/${a.date.split('/')[0]}/${parseInt(a.date.split('/')[2]) - 543} ${a.time}`);
-            const dateB = new Date(`${b.date.split('/')[1]}/${b.date.split('/')[0]}/${parseInt(b.date.split('/')[2]) - 543} ${b.time}`);
-            return dateB - dateA;
+            // Re-parse the original ISO string to ensure accurate sorting by date/time
+            // as the formatted strings might not sort correctly
+            const dateA = new Date(a.logDetails.Transaction_Timestamp || a.logDetails.Log_Timestamp);
+            const dateB = new Date(b.logDetails.Transaction_Timestamp || b.logDetails.Log_Timestamp);
+            return dateB - dateA; // Sort descending (latest first)
         });
+
 
         this.accessEvents = combinedEvents;
         this.accessSummary = {
@@ -155,24 +160,43 @@ export default {
       }
     },
 
-    // --- Formatting Methods ---
+    // --- Formatting Methods (using Thailand Timezone) ---
     formatDate(isoString) {
       if (!isoString) return '';
       const date = new Date(isoString);
-      const day = String(date.getDate()).padStart(2, '0');
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const yearBE = date.getFullYear() + 543;
+      
+      const options = {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        timeZone: 'Asia/Bangkok'
+      };
+
+      const formatter = new Intl.DateTimeFormat('en-GB', options); 
+
+      const parts = formatter.formatToParts(date);
+      let day = parts.find(p => p.type === 'day').value;
+      let month = parts.find(p => p.type === 'month').value;
+      let year = parseInt(parts.find(p => p.type === 'year').value);
+
+      const yearBE = year + 543;
+
       return `${day}/${month}/${yearBE}`;
     },
     formatTime(isoString) {
       if (!isoString) return '';
       const date = new Date(isoString);
-      let hours = date.getHours();
-      const minutes = String(date.getMinutes()).padStart(2, '0');
-      const ampm = hours >= 12 ? 'PM' : 'AM';
-      hours = hours % 12;
-      hours = hours ? hours : 12;
-      return `${hours}:${minutes} ${ampm}`;
+      
+      const options = {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+        timeZone: 'Asia/Bangkok'
+      };
+      
+      const formatter = new Intl.DateTimeFormat('en-US', options); 
+
+      return formatter.format(date);
     },
   }
 };
