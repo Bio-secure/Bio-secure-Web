@@ -1,5 +1,6 @@
 <script>
 export default {
+  name: 'MonitoringDashboard',
   data() {
     return {
       accessEvents: [],
@@ -12,61 +13,187 @@ export default {
         today: 0,
         week: 0,
         month: 0,
+      },
+      loading: {
+        accessEvents: true,
+        registrations: true,
+        registrationStats: true,
+      },
+      error: {
+        accessEvents: null,
+        registrations: null,
+        registrationStats: null,
       }
     };
   },
   mounted() {
-    this.fetchAccessEvents();
-    this.fetchRegistrations();
-    this.fetchRegistrationStats();
+    this.fetchDashboardData();
   },
   methods: {
+    async fetchDashboardData() {
+      await Promise.all([
+        this.fetchAccessEvents(),
+        this.fetchRegistrations(),
+        this.fetchRegistrationStats(),
+      ]);
+    },
+
+    async fetchData(endpoint, targetArray, loadingKey, errorKey) {
+      this.loading[loadingKey] = true;
+      this.error[errorKey] = null;
+      try {
+        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+        const response = await fetch(`${API_BASE_URL}/${endpoint}`);
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.detail || `Failed to fetch data from ${endpoint}`);
+        }
+        this[targetArray] = await response.json();
+      } catch (err) {
+        console.error(`Error fetching from ${endpoint}:`, err);
+        this.error[errorKey] = `Failed to load ${endpoint.replace('-', ' ')}.`;
+      } finally {
+        this.loading[loadingKey] = false;
+      }
+    },
+
     async fetchAccessEvents() {
-      // Replace this with real API call
-      this.accessEvents = [
-        { id: 1, date: '20/04/2568', time: '3:00 PM', name: 'Anuphat manotam', result: 'Access Grand' },
-        { id: 2, date: '20/04/2568', time: '10:00 AM', name: 'Anuphat manotam', result: 'Access Grand' },
-        { id: 3, date: '19/04/2568', time: '11:00 AM', name: 'Philip Housden', result: 'Access Denied' },
-      ];
-      this.accessSummary = {
-        success: 155,
-        denied: 3
-      };
+      this.loading.accessEvents = true;
+      this.error.accessEvents = null;
+      try {
+        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+
+        const customerLogsResponse = await fetch(`${API_BASE_URL}/customer-logs`);
+        if (!customerLogsResponse.ok) throw new Error(`Failed to fetch customer logs: ${customerLogsResponse.statusText}`);
+        const customerLogs = await customerLogsResponse.json();
+
+        const employeeLogsResponse = await await fetch(`${API_BASE_URL}/employee-logs`);
+        if (!employeeLogsResponse.ok) throw new Error(`Failed to fetch employee logs: ${employeeLogsResponse.statusText}`);
+        const employeeLogs = await employeeLogsResponse.json();
+
+        let combinedEvents = [];
+        let successCount = 0;
+        let deniedCount = 0;
+        let idCounter = 0;
+
+        customerLogs.forEach(log => {
+          const resultText = log.Result ? 'Access Granted' : 'Access Denied';
+          if (log.Result) {
+            successCount++;
+          } else {
+            deniedCount++;
+          }
+          combinedEvents.push({
+            id: 'cust-' + idCounter++,
+            date: this.formatDate(log.Transaction_Timestamp),
+            time: this.formatTime(log.Transaction_Timestamp),
+            name: `${log.Name} ${log.SurName}`,
+            result: resultText,
+            originalType: 'customer',
+            logDetails: log
+          });
+        });
+
+        employeeLogs.forEach(log => {
+          const resultText = log.EmResult === 'Success' ? 'Access Granted' : 'Access Denied';
+          if (log.EmResult === 'Success') {
+            successCount++;
+          } else {
+            deniedCount++;
+          }
+          combinedEvents.push({
+            id: 'emp-' + idCounter++,
+            date: this.formatDate(log.Log_Timestamp),
+            time: this.formatTime(log.Log_Timestamp),
+            name: `${log.EmName} ${log.EmSurName}`,
+            result: resultText,
+            originalType: 'employee',
+            logDetails: log
+          });
+        });
+
+        combinedEvents.sort((a, b) => {
+            const dateA = new Date(`${a.date.split('/')[1]}/${a.date.split('/')[0]}/${parseInt(a.date.split('/')[2]) - 543} ${a.time}`);
+            const dateB = new Date(`${b.date.split('/')[1]}/${b.date.split('/')[0]}/${parseInt(b.date.split('/')[2]) - 543} ${b.time}`);
+            return dateB - dateA;
+        });
+
+        this.accessEvents = combinedEvents;
+        this.accessSummary = {
+          success: successCount,
+          denied: deniedCount
+        };
+
+      } catch (err) {
+        console.error('Error fetching access events:', err);
+        this.error.accessEvents = 'Failed to load access events. Please check server logs.';
+      } finally {
+        this.loading.accessEvents = false;
+      }
     },
+
     async fetchRegistrations() {
-      // Replace this with real API call
-      this.registrations = [
-        { id: 1, date: '20/04/2568', time: '3:00 PM', name: 'Anuphat manotam', balance: 1000000 },
-        { id: 2, date: '20/04/2568', time: '10:00 AM', name: 'Anuphat manotam', balance: 1000000 },
-        { id: 3, date: '19/04/2568', time: '11:00 AM', name: 'Philip Housden', balance: 1000000 },
-      ];
+      await this.fetchData('registration-records', 'registrations', 'registrations', 'registrations');
     },
+
     async fetchRegistrationStats() {
-      // Replace this with real API call
-      this.registrationStats = {
-        today: 12,
-        week: 52,
-        month: 120
-      };
-    }
+      this.loading.registrationStats = true;
+      this.error.registrationStats = null;
+      try {
+        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+        const response = await fetch(`${API_BASE_URL}/registration-stats`);
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.detail || 'Failed to fetch registration stats');
+        }
+        this.registrationStats = await response.json();
+      } catch (err) {
+        console.error('Error fetching registration stats:', err);
+        this.error.registrationStats = 'Failed to load registration stats.';
+      } finally {
+        this.loading.registrationStats = false;
+      }
+    },
+
+    // --- Formatting Methods ---
+    formatDate(isoString) {
+      if (!isoString) return '';
+      const date = new Date(isoString);
+      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const yearBE = date.getFullYear() + 543;
+      return `${day}/${month}/${yearBE}`;
+    },
+    formatTime(isoString) {
+      if (!isoString) return '';
+      const date = new Date(isoString);
+      let hours = date.getHours();
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12;
+      hours = hours ? hours : 12;
+      return `${hours}:${minutes} ${ampm}`;
+    },
   }
 };
 </script>
 
 <template>
-  <div class="flex h-screen text-gray-800">
-    <!-- Main Dashboard Content -->
+  <div class="flex h-screen text-gray-800 bg-gray-100">
     <div class="flex-1 p-6 grid grid-cols-1 lg:grid-cols-2 gap-6 overflow-auto">
-      <!-- Access Event Table -->
+
       <div class="bg-white rounded-2xl shadow p-6">
         <h2 class="text-2xl font-semibold mb-4">Access Events</h2>
-        <table class="w-full text-sm">
+        <div v-if="loading.accessEvents" class="text-center text-blue-700">Loading access events...</div>
+        <div v-else-if="error.accessEvents" class="text-center text-red-500">{{ error.accessEvents }}</div>
+        <div v-else-if="accessEvents.length === 0" class="text-center text-gray-500">No recent access events.</div>
+        <table v-else class="w-full text-sm">
           <thead>
-            <tr class="border-b text-gray-500">
-              <th class="text-left py-2">Date</th>
-              <th class="text-left py-2">Time</th>
-              <th class="text-left py-2">Name</th>
-              <th class="text-left py-2">Result</th>
+            <tr class="border-b text-gray-500 bg-blue-50">
+              <th class="text-left py-2 px-2">Date</th>
+              <th class="text-left py-2 px-2">Time</th>
+              <th class="text-left py-2 px-2">Name</th>
+              <th class="text-left py-2 px-2">Result</th>
             </tr>
           </thead>
           <tbody>
@@ -75,11 +202,12 @@ export default {
               :key="event.id"
               class="border-b hover:bg-gray-50 transition"
             >
-              <td class="py-2">{{ event.date }}</td>
-              <td class="py-2">{{ event.time }}</td>
-              <td class="py-2">{{ event.name }}</td>
+              <td class="py-2 px-2">{{ event.date }}</td>
+              <td class="py-2 px-2">{{ event.time }}</td>
+              <td class="py-2 px-2">{{ event.name }}</td>
               <td
-                :class="event.result === 'Access Grand' ? 'text-green-600 font-semibold' : 'text-red-500 font-semibold'"
+                :class="event.result === 'Access Granted' ? 'text-green-600 font-semibold' : 'text-red-500 font-semibold'"
+                class="py-2 px-2"
               >
                 {{ event.result }}
               </td>
@@ -88,55 +216,62 @@ export default {
         </table>
       </div>
 
-      <!-- Access Summary -->
       <div class="bg-white rounded-2xl shadow p-6">
         <h2 class="text-2xl font-semibold mb-4">Access Summary</h2>
-        <div class="text-xl mb-2">Successful: <span class="font-bold text-green-600">{{ accessSummary.success }}</span></div>
-        <div class="text-xl">Denied: <span class="font-bold text-red-500">{{ accessSummary.denied }}</span></div>
+        <div v-if="loading.accessEvents" class="text-center text-blue-700">Calculating summary...</div>
+        <div v-else-if="error.accessEvents" class="text-center text-red-500">{{ error.accessEvents }}</div>
+        <template v-else>
+          <div class="text-xl mb-2">Successful: <span class="font-bold text-green-600">{{ accessSummary.success }}</span></div>
+          <div class="text-xl">Denied: <span class="font-bold text-red-500">{{ accessSummary.denied }}</span></div>
+        </template>
         <div class="mt-6 h-28 bg-gray-100 rounded-xl flex items-center justify-center text-gray-400">
-          [Chart Placeholder]
+          [Chart Placeholder - Requires a charting library like Chart.js or Echarts]
         </div>
       </div>
 
-      <!-- Registration Table -->
       <div class="bg-white rounded-2xl shadow p-6">
         <h2 class="text-2xl font-semibold mb-4">Registration Records</h2>
-        <table class="w-full text-sm">
+        <div v-if="loading.registrations" class="text-center text-blue-700">Loading registrations...</div>
+        <div v-else-if="error.registrations" class="text-center text-red-500">{{ error.registrations }}</div>
+        <div v-else-if="registrations.length === 0" class="text-center text-gray-500">No registration records found.</div>
+        <table v-else class="w-full text-sm">
           <thead>
-            <tr class="border-b text-gray-500">
-              <th class="text-left py-2">Date</th>
-              <th class="text-left py-2">Time</th>
-              <th class="text-left py-2">Name</th>
-              <th class="text-left py-2">Balance</th>
+            <tr class="border-b text-gray-500 bg-blue-50">
+              <th class="text-left py-2 px-2">Date</th>
+              <th class="text-left py-2 px-2">Time</th>
+              <th class="text-left py-2 px-2">Name</th>
+              <th class="text-left py-2 px-2">National ID</th>
             </tr>
           </thead>
           <tbody>
             <tr
               v-for="reg in registrations"
-              :key="reg.id"
+              :key="reg.National_ID"
               class="border-b hover:bg-gray-50 transition"
             >
-              <td class="py-2">{{ reg.date }}</td>
-              <td class="py-2">{{ reg.time }}</td>
-              <td class="py-2">{{ reg.name }}</td>
-              <td class="py-2 text-green-600 font-medium">{{ reg.balance.toLocaleString() }}</td>
+              <td class="py-2 px-2">{{ formatDate(reg.DOR) }}</td>
+              <td class="py-2 px-2">{{ formatTime(reg.DOR) }}</td>
+              <td class="py-2 px-2">{{ reg.Name }} {{ reg.SurName }}</td>
+              <td class="py-2 px-2">{{ reg.National_ID }}</td>
             </tr>
           </tbody>
         </table>
       </div>
 
-      <!-- User Registration Stats -->
       <div class="bg-white rounded-2xl shadow p-6">
         <h2 class="text-2xl font-semibold mb-4">Registration Stats</h2>
-        <div class="space-y-2 text-lg">
-          <div>Today: <strong>{{ registrationStats.today }}</strong></div>
-          <div>This Week: <strong>{{ registrationStats.week }}</strong></div>
-          <div>This Month: <strong>{{ registrationStats.month }}</strong></div>
-        </div>
+        <div v-if="loading.registrationStats" class="text-center text-blue-700">Loading stats...</div>
+        <div v-else-if="error.registrationStats" class="text-center text-red-500">{{ error.registrationStats }}</div>
+        <template v-else>
+          <div class="space-y-2 text-lg">
+            <div>Today: <strong>{{ registrationStats.today }}</strong></div>
+            <div>This Week: <strong>{{ registrationStats.week }}</strong></div>
+            <div>This Month: <strong>{{ registrationStats.month }}</strong></div>
+          </div>
+        </template>
       </div>
     </div>
 
-    <!-- Right Sidebar with White Background -->
     <aside class="w-72 bg-white shadow-md flex flex-col items-center px-6 py-8">
       <img
         src="../assets/pawat.png"
