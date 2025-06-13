@@ -6,3 +6,5 @@ uvicorn
 nest-asyncio
 supabase
 dotenv
+passlib[bcrypt]
+pytz

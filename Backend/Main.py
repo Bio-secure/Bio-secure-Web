@@ -7,6 +7,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from supabase import create_client, Client
+from pydantic import BaseModel
+from pydantic import BaseModel
+from passlib.context import CryptContext # NEW IMPORT for password hashing
+
+class EmployeeCreate(BaseModel):
+    employeeId: int 
+    name: str       
+    surname: str    
+    password: str   
+    isAdmin: bool
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 try:
     from deepface import DeepFace
@@ -84,6 +96,35 @@ async def identify_face(image: UploadFile = File(...)):
     finally:
         if os.path.exists(image_path):
             os.remove(image_path)
+
+@app.post("/register-employee")
+async def register_employee(employee_data: EmployeeCreate):
+    try:
+        # Get the current time for FDW, assuming Thailand timezone
+        now_thailand_tz = datetime.datetime.now(datetime.timezone.utc)
+
+        # --- CRITICAL: HASH THE PASSWORD ---
+        hashed_password = pwd_context.hash(employee_data.password)
+
+        payload = {
+            "EmID": employee_data.employeeId,
+            "EmName": employee_data.name,
+            "EmSurName": employee_data.surname,
+            "IsAdmin": employee_data.isAdmin,
+            "FDW": now_thailand_tz.isoformat(), # First Day Working
+            "EmPass": hashed_password # STORE THE HASHED PASSWORD
+        }
+        
+        response = supabase.table("Employees").insert([payload]).execute()
+
+        supabase_error = getattr(response, 'error', None)
+        if supabase_error:
+            raise HTTPException(status_code=500, detail=f"Failed to register employee: {getattr(supabase_error, 'message', str(supabase_error))}")
+        
+        return {"message": "Employee registered successfully!", "data": response.data}
+    except Exception as e:
+        print(f"Error registering employee: {e}")
+        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
 
 @app.post("/register-user")
 async def register_user(user_data: dict):

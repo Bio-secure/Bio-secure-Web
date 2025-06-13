@@ -1,10 +1,16 @@
 <script>
+import EmployeeRegistrationModal from '../components/EmRegis.vue'; // Import the new modal component
+
 export default {
   name: 'MonitoringDashboard',
+  components: {
+    EmployeeRegistrationModal // Register the component
+  },
   data() {
     return {
-      accessEvents: [], // RESTORED: Access Events data
-      accessSummary: { // RESTORED: Access Summary data
+      showEmployeeRegistrationModal: false, // NEW: State to control modal visibility
+      accessEvents: [],
+      accessSummary: {
         success: 0,
         denied: 0,
       },
@@ -15,12 +21,12 @@ export default {
         month: 0,
       },
       loading: {
-        accessEvents: true, // RESTORED: Loading state for Access Events
+        accessEvents: true,
         registrations: true,
         registrationStats: true,
       },
       error: {
-        accessEvents: null, // RESTORED: Error state for Access Events
+        accessEvents: null,
         registrations: null,
         registrationStats: null,
       }
@@ -32,7 +38,7 @@ export default {
   methods: {
     async fetchDashboardData() {
       await Promise.all([
-        this.fetchAccessEvents(), // RESTORED: Call to fetch Access Events
+        this.fetchAccessEvents(),
         this.fetchRegistrations(),
         this.fetchRegistrationStats(),
       ]);
@@ -57,13 +63,14 @@ export default {
       }
     },
 
-    // RESTORED: fetchAccessEvents method
     async fetchAccessEvents() {
       this.loading.accessEvents = true;
       this.error.accessEvents = null;
       try {
         const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
+        // NOTE: These endpoints are currently DELETED from main.py as per your last instruction.
+        // You will get errors here until you restore them in your backend.
         const customerLogsResponse = await fetch(`${API_BASE_URL}/customer-logs`);
         if (!customerLogsResponse.ok) throw new Error(`Failed to fetch customer logs: ${customerLogsResponse.statusText}`);
         const customerLogs = await customerLogsResponse.json();
@@ -113,15 +120,11 @@ export default {
           });
         });
 
-        // Sorting by actual timestamp (assuming BE conversion doesn't break sort)
         combinedEvents.sort((a, b) => {
-            // Re-parse the original ISO string to ensure accurate sorting by date/time
-            // as the formatted strings might not sort correctly
             const dateA = new Date(a.logDetails.Transaction_Timestamp || a.logDetails.Log_Timestamp);
             const dateB = new Date(b.logDetails.Transaction_Timestamp || b.logDetails.Log_Timestamp);
-            return dateB - dateA; // Sort descending (latest first)
+            return dateB - dateA;
         });
-
 
         this.accessEvents = combinedEvents;
         this.accessSummary = {
@@ -160,7 +163,6 @@ export default {
       }
     },
 
-    // --- Formatting Methods (using Thailand Timezone) ---
     formatDate(isoString) {
       if (!isoString) return '';
       const date = new Date(isoString);
@@ -198,6 +200,17 @@ export default {
 
       return formatter.format(date);
     },
+    
+    // MODIFIED METHOD: Open the modal instead of navigating
+    openEmployeeRegistrationModal() {
+      this.showEmployeeRegistrationModal = true;
+    },
+    // NEW METHOD: Close the modal
+    closeEmployeeRegistrationModal() {
+      this.showEmployeeRegistrationModal = false;
+      // Optionally, re-fetch registrations if a new employee impacts dashboard data
+      // this.fetchRegistrations();
+    }
   }
 };
 </script>
@@ -305,7 +318,14 @@ export default {
       <span class="bg-blue-500 text-white text-xs px-3 py-1 rounded-full mb-2">Manager</span>
       <p class="text-lg font-semibold text-center mb-6">Pawat MungMueng</p>
 
-      <div class="w-full mt-auto">
+      <div class="w-full mt-auto space-y-3">
+        <button
+          @click="openEmployeeRegistrationModal"
+          class="w-full py-2 text-white text-sm bg-blue-600 hover:bg-blue-700 rounded-xl shadow transition"
+        >
+          Register Employee
+        </button>
+
         <button
           class="w-full py-2 text-white text-sm bg-red-500 hover:bg-red-600 rounded-xl shadow transition"
         >
@@ -313,5 +333,10 @@ export default {
         </button>
       </div>
     </aside>
+
+    <EmployeeRegistrationModal 
+      v-if="showEmployeeRegistrationModal" 
+      @close="closeEmployeeRegistrationModal" 
+    />
   </div>
 </template>
