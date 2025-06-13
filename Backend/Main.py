@@ -7,10 +7,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from supabase import create_client, Client
-from pydantic import BaseModel
-from pydantic import BaseModel
-from passlib.context import CryptContext # NEW IMPORT for password hashing
+from pydantic import BaseModel # Only one import needed for BaseModel
+from passlib.context import CryptContext
 
+# Define Pydantic models
 class EmployeeCreate(BaseModel):
     employeeId: int 
     name: str       
@@ -18,6 +18,12 @@ class EmployeeCreate(BaseModel):
     password: str   
     isAdmin: bool
 
+# NEW: Pydantic model for Employee Login
+class EmployeeLogin(BaseModel):
+    emId: int
+    password: str
+
+# Password hashing context (defined once globally)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 try:
@@ -100,8 +106,8 @@ async def identify_face(image: UploadFile = File(...)):
 @app.post("/register-employee")
 async def register_employee(employee_data: EmployeeCreate):
     try:
-        # Get the current time for FDW, assuming Thailand timezone
-        now_thailand_tz = datetime.datetime.now(datetime.timezone.utc)
+        # Get the current time for FDW in UTC
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
 
         # --- CRITICAL: HASH THE PASSWORD ---
         hashed_password = pwd_context.hash(employee_data.password)
@@ -111,7 +117,7 @@ async def register_employee(employee_data: EmployeeCreate):
             "EmName": employee_data.name,
             "EmSurName": employee_data.surname,
             "IsAdmin": employee_data.isAdmin,
-            "FDW": now_thailand_tz.isoformat(), # First Day Working
+            "FDW": now_utc.isoformat(), # First Day Working (UTC)
             "EmPass": hashed_password # STORE THE HASHED PASSWORD
         }
         
@@ -125,6 +131,46 @@ async def register_employee(employee_data: EmployeeCreate):
     except Exception as e:
         print(f"Error registering employee: {e}")
         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
+
+# NEW: Employee Login Endpoint
+@app.post("/login-employee")
+async def login_employee(employee_login_data: EmployeeLogin):
+    try:
+        # 1. Fetch employee by EmID, including Name and SurName
+        # Ensure 'EmName' and 'EmSurName' are selected here
+        response = supabase.table("Employees").select("EmID", "EmPass", "IsAdmin", "EmName", "EmSurName").eq("EmID", employee_login_data.emId).execute() 
+        
+        supabase_error = getattr(response, 'error', None)
+        if supabase_error:
+            print(f"Supabase error during login: {supabase_error}")
+            raise HTTPException(status_code=500, detail=f"Database error: {getattr(supabase_error, 'message', str(supabase_error))}")
+
+        employee_data = response.data
+        if not employee_data:
+            raise HTTPException(status_code=401, detail="Invalid Employee ID or Password.")
+        
+        employee = employee_data[0] # Assuming EmID is unique, there's only one result
+
+        # 2. Verify password
+        if not pwd_context.verify(employee_login_data.password, employee["EmPass"]):
+            raise HTTPException(status_code=401, detail="Invalid Employee ID or Password.")
+        
+        # 3. Successful login: Return success, admin status, and employee name/surname
+        return {
+            "success": True,
+            "message": "Login successful!",
+            "emId": employee["EmID"],
+            "isAdmin": employee["IsAdmin"],
+            "name": employee["EmName"],      # NEW: Return employee's first name
+            "surname": employee["EmSurName"] # NEW: Return employee's last name
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"An unexpected error occurred during employee login: {type(e).__name__} - {str(e)}")
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred during login: {str(e)}")
+
 
 @app.post("/register-user")
 async def register_user(user_data: dict):
@@ -143,7 +189,7 @@ async def register_user(user_data: dict):
             "BirthDate": user_data.get("birthDate"),
             "PhoneNo": int(user_data.get("phoneNo")) if user_data.get("phoneNo") is not None else None,
             "Gender": user_data.get("gender"),
-            "DOR": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "DOR": datetime.datetime.now(datetime.timezone.utc).isoformat(), # Using UTC
             "Email": user_data.get("email") or None,
             "Balance": balance_value,
         }
@@ -209,7 +255,7 @@ async def get_registration_stats():
     Updated to handle Supabase client response structure.
     """
     try:
-        now = datetime.datetime.now(datetime.timezone.utc)
+        now = datetime.datetime.now(datetime.timezone.utc) # Using UTC
         
         # Start of today (UTC)
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)

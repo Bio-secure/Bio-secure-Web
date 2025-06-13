@@ -1,14 +1,19 @@
 <script>
-import EmployeeRegistrationModal from '../components/EmRegis.vue'; // Import the new modal component
+// Import the new modal component (assuming it's named EmRegis.vue as per your import)
+import EmployeeRegistrationModal from '../components/EmRegis.vue'; 
+// NEW: Import the authentication state
+import authState from '../services/authService'; 
 
 export default {
   name: 'MonitoringDashboard',
   components: {
-    EmployeeRegistrationModal // Register the component
+    EmployeeRegistrationModal 
   },
   data() {
     return {
-      showEmployeeRegistrationModal: false, // NEW: State to control modal visibility
+      // NEW: Make authState available in the template
+      authState: authState, // Expose authState to the component's data
+      showEmployeeRegistrationModal: false, 
       accessEvents: [],
       accessSummary: {
         success: 0,
@@ -181,7 +186,7 @@ export default {
       let month = parts.find(p => p.type === 'month').value;
       let year = parseInt(parts.find(p => p.type === 'year').value);
 
-      const yearBE = year + 543;
+      const yearBE = year + 543; // Convert to Buddhist Era
 
       return `${day}/${month}/${yearBE}`;
     },
@@ -201,11 +206,9 @@ export default {
       return formatter.format(date);
     },
     
-    // MODIFIED METHOD: Open the modal instead of navigating
     openEmployeeRegistrationModal() {
       this.showEmployeeRegistrationModal = true;
     },
-    // NEW METHOD: Close the modal
     closeEmployeeRegistrationModal() {
       this.showEmployeeRegistrationModal = false;
       // Optionally, re-fetch registrations if a new employee impacts dashboard data
@@ -310,13 +313,25 @@ export default {
     </div>
 
     <aside class="w-72 bg-white shadow-md flex flex-col items-center px-6 py-8">
-      <img
-        src="../assets/pawat.png"
-        alt="User"
-        class="w-28 h-28 rounded-full object-cover border-2 border-black shadow mb-4"
-      />
-      <span class="bg-blue-500 text-white text-xs px-3 py-1 rounded-full mb-2">Manager</span>
-      <p class="text-lg font-semibold text-center mb-6">Pawat MungMueng</p>
+      <div class="w-28 h-28 rounded-full bg-blue-200 flex items-center justify-center text-blue-800 text-5xl font-bold mb-4">
+        {{ authState.name ? authState.name.charAt(0) : '?' }}{{ authState.surname ? authState.surname.charAt(0) : '' }}
+      </div>
+
+      <span class="bg-blue-500 text-white text-xs px-3 py-1 rounded-full mb-2">
+        {{ authState.isAdmin ? 'Admin' : 'Employee' }}
+      </span>
+
+      <p class="text-lg font-semibold text-center mb-6">
+        <template v-if="authState.isLoggedIn && authState.name && authState.surname">
+          {{ authState.name }} {{ authState.surname }}
+        </template>
+        <template v-else-if="authState.isLoggedIn">
+          Logged-in Employee
+        </template>
+        <template v-else>
+          Not Logged In
+        </template>
+      </p>
 
       <div class="w-full mt-auto space-y-3">
         <button
@@ -325,13 +340,7 @@ export default {
         >
           Register Employee
         </button>
-
-        <button
-          class="w-full py-2 text-white text-sm bg-red-500 hover:bg-red-600 rounded-xl shadow transition"
-        >
-          Log Out
-        </button>
-      </div>
+        </div>
     </aside>
 
     <EmployeeRegistrationModal 
