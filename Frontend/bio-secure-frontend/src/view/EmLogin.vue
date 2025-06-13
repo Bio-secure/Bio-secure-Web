@@ -1,5 +1,5 @@
 <script>
-import authState, { login } from '../services/authService'; // Import the auth service
+import authState, { login } from '../services/authService';
 
 export default {
   name: 'EmployeeLoginPage',
@@ -13,14 +13,13 @@ export default {
   },
   methods: {
     async handleLogin() {
-      this.errorMessage = ''; // Clears previous error
+      this.errorMessage = '';
       this.loading = true;
 
-      // Basic validation (e.g., empty fields)
       if (!this.employeeId || !this.password) {
         this.errorMessage = 'Please enter both Employee ID and Password.';
         this.loading = false;
-        return; // Stops here, no navigation
+        return;
       }
 
       try {
@@ -36,26 +35,22 @@ export default {
 
         if (!response.ok) {
           const errorData = await response.json();
-          // Sets errorMessage for HTTP errors (e.g., 401 Unauthorized)
           throw new Error(errorData.detail || 'Login failed.');
         }
 
         const data = await response.json();
         
         if (data.success) {
-          // Only navigates if login was successful
           login(data.emId, data.isAdmin, data.name, data.surname);
           this.$router.push('/main'); 
         } else {
-          // Sets errorMessage for backend-reported logical failures
           this.errorMessage = data.message || 'Login failed: Invalid credentials.';
         }
       } catch (error) {
         console.error('Login error:', error);
-        // Sets errorMessage for network errors or unhandled exceptions
         this.errorMessage = error.message || 'An unexpected error occurred during login.';
       } finally {
-        this.loading = false; // Stops loading spinner regardless of success/failure
+        this.loading = false;
       }
     },
   },

@@ -96,7 +96,7 @@ export default {
         name: '',
         surname: '',
         employeeId: '',
-        password: '', // NEW: Password field
+        password: '',
         isAdmin: false,
       },
       message: '',
@@ -114,8 +114,6 @@ export default {
         return;
       }
 
-      // TODO: Replace with your actual API endpoint for employee registration
-      // This is where you would send this.employee (including password and isAdmin) to your backend
       console.log('Attempting to register employee with data:', {
         name: this.employee.name,
         surname: this.employee.surname,
@@ -137,7 +135,6 @@ export default {
         }
         this.message = 'Employee registered successfully!';
         this.messageType = 'success';
-        // Optionally clear form or close modal after success
         this.employee = { name: '', surname: '', employeeId: '', password: '', isAdmin: false }; // Reset form
         this.$emit('close'); // Close modal after successful registration
       } catch (error) {

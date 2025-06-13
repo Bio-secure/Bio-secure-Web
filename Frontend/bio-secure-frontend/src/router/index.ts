@@ -16,12 +16,12 @@ import authState from '../services/authService';
 const routes = [
   {
     path: '/',
-    name: 'login', // Root path is now the employee login page
+    name: 'login',
     component: EmLogin
   },
   {
     path: '/main',
-    name: 'mainmenu', // The main menu for all users (non-admin could land here)
+    name: 'mainmenu',
     component: MainMenu
   },
   {
@@ -36,9 +36,9 @@ const routes = [
   },
   {
     path: '/monitor',
-    name: 'monitor', // Renamed from 'dashboard' to 'monitor' to match component
+    name: 'monitor',
     component: Monitor,
-    meta: { requiresAuth: true, requiresAdmin: true } // Correctly marked for auth and admin
+    meta: { requiresAuth: true, requiresAdmin: true }
   },
   {
     path: '/infopage',

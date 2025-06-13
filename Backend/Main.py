@@ -117,8 +117,8 @@ async def register_employee(employee_data: EmployeeCreate):
             "EmName": employee_data.name,
             "EmSurName": employee_data.surname,
             "IsAdmin": employee_data.isAdmin,
-            "FDW": now_utc.isoformat(), # First Day Working (UTC)
-            "EmPass": hashed_password # STORE THE HASHED PASSWORD
+            "FDW": now_utc.isoformat(),
+            "EmPass": hashed_password
         }
         
         response = supabase.table("Employees").insert([payload]).execute()
@@ -137,7 +137,6 @@ async def register_employee(employee_data: EmployeeCreate):
 async def login_employee(employee_login_data: EmployeeLogin):
     try:
         # 1. Fetch employee by EmID, including Name and SurName
-        # Ensure 'EmName' and 'EmSurName' are selected here
         response = supabase.table("Employees").select("EmID", "EmPass", "IsAdmin", "EmName", "EmSurName").eq("EmID", employee_login_data.emId).execute() 
         
         supabase_error = getattr(response, 'error', None)
@@ -161,8 +160,8 @@ async def login_employee(employee_login_data: EmployeeLogin):
             "message": "Login successful!",
             "emId": employee["EmID"],
             "isAdmin": employee["IsAdmin"],
-            "name": employee["EmName"],      # NEW: Return employee's first name
-            "surname": employee["EmSurName"] # NEW: Return employee's last name
+            "name": employee["EmName"],
+            "surname": employee["EmSurName"]
         }
 
     except HTTPException:

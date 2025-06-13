@@ -1,7 +1,5 @@
 <script>
-// Import the new modal component (assuming it's named EmRegis.vue as per your import)
 import EmployeeRegistrationModal from '../components/EmRegis.vue'; 
-// NEW: Import the authentication state
 import authState from '../services/authService'; 
 
 export default {
@@ -11,8 +9,7 @@ export default {
   },
   data() {
     return {
-      // NEW: Make authState available in the template
-      authState: authState, // Expose authState to the component's data
+      authState: authState,
       showEmployeeRegistrationModal: false, 
       accessEvents: [],
       accessSummary: {
@@ -74,8 +71,6 @@ export default {
       try {
         const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
-        // NOTE: These endpoints are currently DELETED from main.py as per your last instruction.
-        // You will get errors here until you restore them in your backend.
         const customerLogsResponse = await fetch(`${API_BASE_URL}/customer-logs`);
         if (!customerLogsResponse.ok) throw new Error(`Failed to fetch customer logs: ${customerLogsResponse.statusText}`);
         const customerLogs = await customerLogsResponse.json();
@@ -211,8 +206,6 @@ export default {
     },
     closeEmployeeRegistrationModal() {
       this.showEmployeeRegistrationModal = false;
-      // Optionally, re-fetch registrations if a new employee impacts dashboard data
-      // this.fetchRegistrations();
     }
   }
 };
