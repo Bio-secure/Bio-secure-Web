@@ -2,7 +2,7 @@ import os
 import shutil
 import datetime
 from dotenv import load_dotenv
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, Form, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -64,41 +64,82 @@ app.mount("/assets", StaticFiles(directory=ASSET_FOLDER), name="asset")
 def root():
     return {"message": "FastAPI is running!"}
 
-@app.post("/identify")
-async def identify_face(image: UploadFile = File(...)):
-    if DeepFace is None:
-        raise HTTPException(status_code=503, detail="DeepFace is not available on this server.")
+@app.get("/customers")
+def get_all_customers():
+    """
+    Fetches a list of all customers to populate the frontend dropdown.
+    """
+    try:
+        response = supabase.table('Customer').select('National_ID, Name, SurName').execute()
+        if response.data:
+            # Format the name for display in the dropdown
+            for customer in response.data:
+                customer['displayName'] = f"{customer['Name']} {customer['SurName']}"
+            return response.data
+        return []
+    except Exception as e:
+        print(f"Error fetching customers: {e}")
+        raise HTTPException(status_code=500, detail="Could not fetch customer list.")
 
-    if not image.filename:
-        raise HTTPException(status_code=400, detail="No image file provided.")
+@app.post("/verify")
+async def verify_customer_identity(
+    image: UploadFile = File(...),
+    customer_id: str = Form(...) # Get the selected customer's ID from the form
+):
+    """
+    Verifies if the uploaded image matches the selected customer's stored embedding.
+    """
+    if not image.filename or not customer_id:
+        raise HTTPException(status_code=400, detail="Image file and Customer ID are required.")
 
     image_path = os.path.join(UPLOAD_FOLDER, image.filename)
+    
     try:
+        # 1. Save uploaded image temporarily
         with open(image_path, "wb") as buffer:
             shutil.copyfileobj(image.file, buffer)
 
-        if not os.listdir(ASSET_FOLDER):
-            raise HTTPException(status_code=404, detail="No faces found in asset directory for comparison.")
+        # 2. Generate embedding for the uploaded image
+        try:
+            embedding_objs = DeepFace.represent(img_path=image_path, model_name="VGG-Face", enforce_detection=False)
+            if not embedding_objs or 'embedding' not in embedding_objs[0]:
+                raise ValueError("Could not process a face in the uploaded image.")
+            uploaded_embedding = embedding_objs[0]['embedding']
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Face processing error: {e}")
 
-        result = DeepFace.find(
-            img_path=image_path,
-            db_path=ASSET_FOLDER,
-            enforce_detection=False
-        )
+        # 3. Fetch the stored embedding for the SELECTED customer
+        response = supabase.table('Biometric').select('face_embedding, face_image_url').eq('National ID', customer_id).single().execute()
+        
+        if not response.data:
+            raise HTTPException(status_code=404, detail="Biometric data not found for the selected customer.")
+        
+        stored_embedding = response.data['face_embedding']
+        match_image_url = response.data['face_image_url']
 
-        if len(result) > 0 and not result[0].empty:
-            match_path = result[0].iloc[0]["identity"]
-            match_name = os.path.basename(match_path)
-            match_url = f"http://localhost:8000/assets/{match_name}"
-            return {"identity": match_name, "image_url": match_url}
+        # 4. Compare the two embeddings
+        from scipy.spatial.distance import cosine
+        distance = cosine(uploaded_embedding, stored_embedding)
+
+        # 5. Return the result
+        if distance < DISTANCE_THRESHOLD:
+            return {
+                "verified": True,
+                "message": "Verified Successfully",
+                "distance": distance,
+                "image_url": match_image_url
+            }
         else:
-            return {"identity": "No match found", "image_url": None}
+            return {
+                "verified": False,
+                "message": "Verification Failed: Faces do not match.",
+                "distance": distance,
+                "image_url": match_image_url
+            }
 
     except Exception as e:
-        print(f"DeepFace identification error: {str(e)}")
-        if os.path.exists(image_path):
-            os.remove(image_path)
-        raise HTTPException(status_code=500, detail=f"Face identification failed: {str(e)}")
+        print(f"An unexpected error occurred during verification: {e}")
+        raise HTTPException(status_code=500, detail="An internal verification error occurred.")
     finally:
         if os.path.exists(image_path):
             os.remove(image_path)
