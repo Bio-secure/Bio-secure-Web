@@ -52,6 +52,11 @@ const routes = [
     name: 'image',
     component: ImageRegis
   },
+  {
+    path: '/verify',
+    name: 'image',
+    component: ImageRegis
+  },
 ]
 
 const router = createRouter({
