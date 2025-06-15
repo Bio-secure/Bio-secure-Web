@@ -43,13 +43,13 @@ const routes = [
     meta: { requiresAuth: true, requiresAdmin: true }
   },
   {
-    path: '/infopage',
-    name: 'infopage',
+    path: '/info/:id',
+    name: 'CustomerInfo',
     component: InfoPage
   },
   {
     path: '/image',
-    name: 'infopage',
+    name: 'image',
     component: ImageRegis
   },
 ]

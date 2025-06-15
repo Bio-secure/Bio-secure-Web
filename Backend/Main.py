@@ -212,6 +212,40 @@ async def verify_customer_identity(
         if os.path.exists(image_path):
             os.remove(image_path)
 
+@app.get("/customer-details/{customer_id}")
+async def get_customer_details(customer_id: int):
+    """
+    Fetches detailed information for a single customer, including their
+    biometric face image URL if it exists.
+    """
+    try:
+        # Fetch main customer details from the Customer table
+        customer_response = supabase.table("Customer").select("*").eq("National_ID", customer_id).single().execute()
+
+        if not customer_response.data:
+            raise HTTPException(status_code=404, detail="Customer not found")
+
+        customer_data = customer_response.data
+
+        # NEW: Now, try to fetch the face image URL from the Biometric table
+        try:
+            biometric_response = supabase.table("Biometric").select("face_image_url").eq("National_ID", customer_id).single().execute()
+            if biometric_response.data and biometric_response.data.get("face_image_url"):
+                customer_data['face_image_url'] = biometric_response.data['face_image_url']
+            else:
+                customer_data['face_image_url'] = None # No biometric record or URL found
+        except Exception:
+            # If there's any error fetching (e.g., no record), set URL to None
+            customer_data['face_image_url'] = None
+        
+        # We will keep transactions empty for now as before
+        customer_data['transactions'] = []
+
+        return customer_data
+
+    except Exception as e:
+        print(f"Error fetching customer details: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch customer details.")
 
 @app.post("/register-employee")
 async def register_employee(employee_data: EmployeeCreate):
