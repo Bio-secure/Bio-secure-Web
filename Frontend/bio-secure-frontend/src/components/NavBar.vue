@@ -1,17 +1,19 @@
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 // @ts-ignore
 import authState, { logout } from '../services/authService';
 
 const route = useRoute();
 const router = useRouter();
+const showAgreement = ref(false);
 
 const isLinkPage = computed(() => route.name === 'Link');
 
 const handleLogout = () => {
   logout();
-  router.push('/'); 
+  localStorage.setItem('privacyAcknowledged', 'false');
+  router.push('/');
 };
 </script>
 

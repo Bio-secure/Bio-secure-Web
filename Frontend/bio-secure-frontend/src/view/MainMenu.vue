@@ -1,9 +1,34 @@
 <script lang="ts">
+import { defineComponent, ref, onMounted } from 'vue';
+import AgreementPopUp from '../components/AgreementPopUp.vue';
 
+export default defineComponent({
+  name: 'MainMenu',
+  components: {
+    AgreementPopUp
+  },
+  setup() {
+    const showAgreement = ref(false);
+
+    onMounted(() => {
+      const hasAgreed = localStorage.getItem('privacyAcknowledged') === 'true';
+      // Only show the modal if the user has never agreed
+      showAgreement.value = !hasAgreed;
+    });
+
+    // Hide modal from parent when child acknowledges
+    const handleAgreementAcknowledged = () => {
+      showAgreement.value = false;
+    };
+
+    return { showAgreement, handleAgreementAcknowledged };
+  }
+});
 </script>
 
 <template>
   <div class="min-h-screen flex items-center justify-center">
+    <agreement-pop-up v-if="showAgreement" @acknowledged="handleAgreementAcknowledged" />
     <div class="grid grid-cols-3 gap-28">
       <!-- Register -->
       <div class="p-10 flex flex-col items-center">
