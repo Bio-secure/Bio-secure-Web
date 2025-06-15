@@ -25,8 +25,9 @@ const irisPreview = ref(null);
 const verificationType = ref(null);
 
 // State for results
+// `result` will now store the raw response from either /verify or /authenticate-iris
 const result = ref(null);
-const matchFaceImageUrl = ref(null);
+const matchFaceImageUrl = ref(null); // Specific to face verification
 const isLoading = ref(false);
 
 // --- Fetch Customers on Component Load ---
@@ -68,6 +69,7 @@ function handleFileChange(event, type) {
   const file = event.target.files[0];
   if (!file) return;
 
+  // Clear previous results when a new file is selected
   result.value = null;
   matchFaceImageUrl.value = null;
 
@@ -75,15 +77,34 @@ function handleFileChange(event, type) {
     verificationType.value = 'face';
     selectedFaceFile.value = file;
     facePreview.value = URL.createObjectURL(file);
+    // Clear iris selection if face is chosen
     selectedIrisFile.value = null;
     irisPreview.value = null;
   } else if (type === 'iris') {
     verificationType.value = 'iris';
     selectedIrisFile.value = file;
     irisPreview.value = URL.createObjectURL(file);
+    // Clear face selection if iris is chosen
     selectedFaceFile.value = null;
     facePreview.value = null;
   }
+}
+
+// Helper function to convert File to Base64
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      // Get base64 string without the "data:image/jpeg;base64," prefix
+      if (reader.result) {
+        resolve(reader.result.split(',')[1]);
+      } else {
+        reject(new Error("Failed to read file as Data URL."));
+      }
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 // --- Main Verification Logic ---
@@ -96,34 +117,77 @@ async function verifyIdentity() {
     alert("Please provide a face or iris scan to verify.");
     return;
   }
-  if (verificationType.value === 'iris') {
-    alert("Iris recognition backend is not implemented yet.");
-    return;
-  }
 
   isLoading.value = true;
-  const formData = new FormData();
-  formData.append("image", selectedFaceFile.value);
-  formData.append("customer_id", selectedCustomer.value.National_ID);
+  result.value = null; // Clear previous results
+  matchFaceImageUrl.value = null; // Clear previous face match image (if any)
 
   try {
-    const res = await fetch("http://localhost:8000/verify", {
-      method: "POST",
-      body: formData
-    });
-    const data = await res.json();
-    result.value = data;
-    matchFaceImageUrl.value = data.image_url || null;
-    if (!res.ok) {
-      alert(`Error: ${data.detail || res.statusText}`);
+    if (verificationType.value === 'face') {
+      if (!selectedFaceFile.value) {
+        alert("No face image selected for verification.");
+        isLoading.value = false;
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append("image", selectedFaceFile.value);
+      formData.append("customer_id", selectedCustomer.value.National_ID);
+
+      const res = await fetch("http://localhost:8000/verify", {
+        method: "POST",
+        body: formData
+      });
+      const data = await res.json();
+      result.value = data; // DeepFace verification response
+      matchFaceImageUrl.value = data.image_url || null; // This is for face
+      if (!res.ok) {
+        alert(`Error: ${data.detail || res.statusText}`);
+      }
+
+    } else if (verificationType.value === 'iris') {
+      if (!selectedIrisFile.value) {
+        alert("No iris image selected for verification.");
+        isLoading.value = false;
+        return;
+      }
+
+      const base64ImageData = await fileToBase64(selectedIrisFile.value);
+
+      const requestBody = {
+        user_id: selectedCustomer.value.National_ID.toString(), // Ensure user_id is a string for the backend Pydantic model
+        image_data: base64ImageData
+      };
+
+      const res = await fetch("http://localhost:8000/authenticate-iris", {
+        method: "POST",
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      const data = await res.json();
+      result.value = data; // IrisAuthResponse structure
+      
+      if (!res.ok) {
+        alert(`Error: ${data.detail || res.statusText}`);
+      }
     }
   } catch (err) {
     console.error("Network or unexpected error:", err);
-    result.value = { verified: false, message: "Error during verification." };
+    result.value = { message: "Error during verification.", is_authenticated: false, verified: false }; // Ensure properties for template
   } finally {
     isLoading.value = false;
   }
 }
+
+// Computed property to determine if verification was successful from the `result` object
+const isVerificationSuccessful = computed(() => {
+  if (!result.value) return false;
+  // Check for both facial recognition's `verified` and iris's `is_authenticated`
+  return result.value.verified === true || result.value.is_authenticated === true;
+});
 
 // Computed property to dynamically disable the verify button
 const isVerifyDisabled = computed(() => {
@@ -201,22 +265,33 @@ const isVerifyDisabled = computed(() => {
 
     <div v-if="result" class="w-full max-w-2xl mt-6">
         <h3 class="text-xl font-semibold text-gray-800 text-center">Verification Result</h3>
-        <div class="mt-4 px-6 py-4 rounded-lg text-xl font-semibold text-center shadow-md" :class="{ 'bg-green-100 text-green-800': result.verified, 'bg-red-100 text-red-800': !result.verified }">
+        <div class="mt-4 px-6 py-4 rounded-lg text-xl font-semibold text-center shadow-md"
+             :class="{ 'bg-green-100 text-green-800': isVerificationSuccessful, 'bg-red-100 text-red-800': !isVerificationSuccessful }">
           {{ result.message }}
-          <p v-if="typeof result.distance === 'number'" class="text-sm font-normal mt-1">
-            (Confidence Score / Distance: {{ result.distance.toFixed(4) }})
+          <!-- Display relevant score/distance based on verification type -->
+          <p v-if="verificationType === 'face' && typeof result.distance === 'number'" class="text-sm font-normal mt-1">
+            (Distance: {{ result.distance.toFixed(4) }})
+          </p>
+          <p v-else-if="verificationType === 'iris' && (typeof result.similarity === 'number' || typeof result.best_similarity === 'number')" class="text-sm font-normal mt-1">
+            (Similarity: {{ (result.similarity || result.best_similarity || 0).toFixed(4) }})
+            <span v-if="result.matched_user_id && result.matched_user_id !== selectedCustomer.National_ID">(Matched ID: {{ result.matched_user_id }})</span>
+          </p>
+          <p v-if="result.detail && verificationType === 'iris'" class="text-sm font-normal mt-1 text-gray-600">
+             ({{ result.detail }})
           </p>
         </div>
-        <div v-if="matchFaceImageUrl" class="flex justify-center items-start gap-16 mt-6">
+        <!-- Display matched face image only for face verification -->
+        <div v-if="verificationType === 'face' && matchFaceImageUrl" class="flex justify-center items-start gap-16 mt-6">
             <div class="text-center">
                 <p class="text-lg font-medium text-gray-700">Your Upload</p>
                 <img :src="facePreview" alt="Uploaded Face" class="w-48 h-48 object-cover rounded-lg shadow-md mt-2 border-2 border-gray-300" />
             </div>
             <div class="text-center">
                 <p class="text-lg font-medium text-gray-700">Customer's Stored Photo</p>
-                 <img :src="matchFaceImageUrl" alt="Matched Face" class="w-48 h-48 object-cover rounded-lg shadow-md mt-2 border-2" :class="result.verified ? 'border-green-500' : 'border-red-500'" />
+                <img :src="matchFaceImageUrl" alt="Matched Face" class="w-48 h-48 object-cover rounded-lg shadow-md mt-2 border-2" :class="isVerificationSuccessful ? 'border-green-500' : 'border-red-500'" />
             </div>
         </div>
+        <!-- For iris, no specific matched image display in this example, but you could add if you store iris images -->
     </div>
   </div>
 </template>
