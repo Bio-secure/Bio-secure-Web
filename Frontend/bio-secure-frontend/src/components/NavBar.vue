@@ -1,29 +1,28 @@
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 // @ts-ignore
 import authState, { logout } from '../services/authService';
 
 const route = useRoute();
 const router = useRouter();
+const showAgreement = ref(false);
 
 const isLinkPage = computed(() => route.name === 'Link');
 
 const handleLogout = () => {
   logout();
-  router.push('/'); 
+  localStorage.setItem('privacyAcknowledged', 'false');
+  router.push('/');
 };
 </script>
 
 <template>
   <nav class="bg-[#1b2d3d] px-6 py-3 flex justify-between items-center">
-    <router-link
-      to="/main"
-      class="text-white font-bold text-xl tracking-wide hover:underline"
-    >
-      {{ isLinkPage ? 'Link' : 'Bio-secure' }}
-    </router-link>
-
+    <div class="text-white font-bold text-xl tracking-wide ">
+      <p>Bio-secure</p>
+    </div>
+    
     <button
       v-if="authState.isLoggedIn"
       @click="handleLogout"
