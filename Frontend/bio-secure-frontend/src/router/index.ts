@@ -12,6 +12,8 @@ import InfoPage from '../view/InfoPage.vue'
 import EmLogin from '../view/EmLogin.vue'
 // @ts-ignore
 import authState from '../services/authService'; 
+// @ts-ignore
+import ImageRegis from '../view/ImageRegis.vue'
 
 const routes = [
   {
@@ -44,6 +46,11 @@ const routes = [
     path: '/infopage',
     name: 'infopage',
     component: InfoPage
+  },
+  {
+    path: '/image',
+    name: 'infopage',
+    component: ImageRegis
   },
 ]
 

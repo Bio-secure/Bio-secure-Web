@@ -1,29 +1,35 @@
+import json
 import os
 import shutil
 import datetime
+import traceback
+import uuid
+
 from dotenv import load_dotenv
 from fastapi import FastAPI, Form, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+import numpy as np
 from supabase import create_client, Client
-from pydantic import BaseModel # Only one import needed for BaseModel
+from pydantic import BaseModel
 from passlib.context import CryptContext
+from scipy.spatial.distance import cosine
+
 
 # Define Pydantic models
 class EmployeeCreate(BaseModel):
-    employeeId: int 
-    name: str       
-    surname: str    
-    password: str   
+    employeeId: int
+    name: str
+    surname: str
+    password: str
     isAdmin: bool
 
-# NEW: Pydantic model for Employee Login
 class EmployeeLogin(BaseModel):
     emId: int
     password: str
 
-# Password hashing context (defined once globally)
+# Password hashing context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 try:
@@ -60,99 +66,158 @@ os.makedirs(ASSET_FOLDER, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=UPLOAD_FOLDER), name="uploads")
 app.mount("/assets", StaticFiles(directory=ASSET_FOLDER), name="asset")
 
+DISTANCE_THRESHOLD = 0.50
+BIOMETRIC_BUCKET = os.getenv("BIOMETRIC_BUCKET")
+
 @app.get("/")
 def root():
     return {"message": "FastAPI is running!"}
 
+@app.post("/register-biometric")
+async def register_biometric(
+    national_id: str = Form(...),
+    face_image: UploadFile = File(...),
+    iris_image: UploadFile = File(None) # Optional
+):
+    if not DeepFace:
+        raise HTTPException(status_code=503, detail="Facial recognition service is not available.")
+    
+    face_filename = f"{national_id}_face_{uuid.uuid4()}.{face_image.filename.split('.')[-1]}"
+    face_image_path = os.path.join(UPLOAD_FOLDER, face_filename)
+
+    try:
+        with open(face_image_path, "wb") as buffer:
+            shutil.copyfileobj(face_image.file, buffer)
+
+        embedding_objs = DeepFace.represent(img_path=face_image_path, model_name="VGG-Face", enforce_detection=False)
+        if not embedding_objs or 'embedding' not in embedding_objs[0]:
+            raise HTTPException(status_code=400, detail="Could not generate a face embedding. Ensure the image contains a clear face.")
+        face_embedding = embedding_objs[0]['embedding']
+
+        with open(face_image_path, "rb") as f:
+            supabase.storage.from_(BIOMETRIC_BUCKET).upload(file=f, path=face_filename)
+        
+        face_image_url = supabase.storage.from_(BIOMETRIC_BUCKET).get_public_url(face_filename)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing face image: {e}")
+    finally:
+        if os.path.exists(face_image_path):
+            os.remove(face_image_path)
+
+    iris_image_url = None
+    if iris_image:
+        iris_filename = f"{national_id}_iris_{uuid.uuid4()}.{iris_image.filename.split('.')[-1]}"
+        try:
+            with open(os.path.join(UPLOAD_FOLDER, iris_filename), "wb") as buffer:
+                shutil.copyfileobj(iris_image.file, buffer)
+            
+            with open(os.path.join(UPLOAD_FOLDER, iris_filename), "rb") as f:
+                supabase.storage.from_(BIOMETRIC_BUCKET).upload(file=f, path=iris_filename)
+            
+            iris_image_url = supabase.storage.from_(BIOMETRIC_BUCKET).get_public_url(iris_filename)
+        except Exception as e:
+            print(f"Could not process optional iris image: {e}")
+        finally:
+            if os.path.exists(os.path.join(UPLOAD_FOLDER, iris_filename)):
+                os.remove(os.path.join(UPLOAD_FOLDER, iris_filename))
+
+    try:
+        payload = {
+            "National_ID": int(national_id),
+            "face_image_url": face_image_url,
+            "face_embedding": face_embedding,
+            "iris_image_url": iris_image_url
+        }
+        
+        supabase.table("Biometric").upsert(payload, on_conflict="National_ID").execute()
+
+        return {"message": f"Biometric data registered successfully for National_ID {national_id}."}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An error occurred during database insertion: {str(e)}")
+
+
 @app.get("/customers")
 def get_all_customers():
-    """
-    Fetches a list of all customers to populate the frontend dropdown.
-    """
     try:
         response = supabase.table('Customer').select('National_ID, Name, SurName').execute()
         if response.data:
-            # Format the name for display in the dropdown
             for customer in response.data:
                 customer['displayName'] = f"{customer['Name']} {customer['SurName']}"
             return response.data
         return []
     except Exception as e:
-        print(f"Error fetching customers: {e}")
         raise HTTPException(status_code=500, detail="Could not fetch customer list.")
 
 @app.post("/verify")
 async def verify_customer_identity(
     image: UploadFile = File(...),
-    customer_id: str = Form(...) # Get the selected customer's ID from the form
+    customer_id: int = Form(...)
 ):
-    """
-    Verifies if the uploaded image matches the selected customer's stored embedding.
-    """
-    if not image.filename or not customer_id:
-        raise HTTPException(status_code=400, detail="Image file and Customer ID are required.")
-
     image_path = os.path.join(UPLOAD_FOLDER, image.filename)
     
     try:
-        # 1. Save uploaded image temporarily
+        # --- Step 1: Save the Uploaded Image ---
         with open(image_path, "wb") as buffer:
             shutil.copyfileobj(image.file, buffer)
 
-        # 2. Generate embedding for the uploaded image
+        # --- Step 2: Generate Embedding from the Image ---
         try:
-            embedding_objs = DeepFace.represent(img_path=image_path, model_name="VGG-Face", enforce_detection=False)
-            if not embedding_objs or 'embedding' not in embedding_objs[0]:
-                raise ValueError("Could not process a face in the uploaded image.")
+            embedding_objs = DeepFace.represent(
+                img_path=image_path, 
+                model_name="VGG-Face", 
+                enforce_detection=True
+            )
             uploaded_embedding = embedding_objs[0]['embedding']
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Face processing error: {e}")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"Could not process image: No face detected. ({str(e)})")
 
-        # 3. Fetch the stored embedding for the SELECTED customer
-        response = supabase.table('Biometric').select('face_embedding, face_image_url').eq('National ID', customer_id).single().execute()
+        # --- Step 3: Fetch Stored Biometric Data from Database ---
+        db_response = supabase.table('Biometric').select('face_embedding, face_image_url').eq('National_ID', customer_id).single().execute()
         
-        if not response.data:
-            raise HTTPException(status_code=404, detail="Biometric data not found for the selected customer.")
+        # --- Step 4: Validate and Clean the Database Response ---
+        if not db_response.data:
+            raise HTTPException(status_code=404, detail=f"Biometric data not found for customer ID: {customer_id}")
         
-        stored_embedding = response.data['face_embedding']
-        match_image_url = response.data['face_image_url']
+        stored_embedding_str = db_response.data.get('face_embedding')
+        match_image_url = db_response.data.get('face_image_url')
 
-        # 4. Compare the two embeddings
-        from scipy.spatial.distance import cosine
+        if not stored_embedding_str:
+            raise HTTPException(status_code=404, detail="Stored face embedding not found for this customer.")
+
+        parsed_list = json.loads(stored_embedding_str)
+        stored_embedding = [float(x) for x in parsed_list]
+
+        # --- Step 5: Compare the Faces and Return Result ---
         distance = cosine(uploaded_embedding, stored_embedding)
 
-        # 5. Return the result
-        if distance < DISTANCE_THRESHOLD:
-            return {
-                "verified": True,
-                "message": "Verified Successfully",
-                "distance": distance,
-                "image_url": match_image_url
-            }
-        else:
-            return {
-                "verified": False,
-                "message": "Verification Failed: Faces do not match.",
-                "distance": distance,
-                "image_url": match_image_url
-            }
+        # FINAL FIX: Convert the numpy.bool_ to a standard Python bool.
+        is_match = bool(distance < DISTANCE_THRESHOLD)
 
+        return {
+            "verified": is_match,
+            "message": "Verified Successfully" if is_match else "Verification Failed: Faces do not match.",
+            "distance": distance,
+            "image_url": match_image_url
+        }
+
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"An unexpected error occurred during verification: {e}")
-        raise HTTPException(status_code=500, detail="An internal verification error occurred.")
+        print(f"An unexpected server error occurred: {e}")
+        raise HTTPException(status_code=500, detail=f"Specific Backend Error: {str(e)}")
+        
     finally:
         if os.path.exists(image_path):
             os.remove(image_path)
 
+
 @app.post("/register-employee")
 async def register_employee(employee_data: EmployeeCreate):
     try:
-        # Get the current time for FDW in UTC
         now_utc = datetime.datetime.now(datetime.timezone.utc)
-
-        # --- CRITICAL: HASH THE PASSWORD ---
         hashed_password = pwd_context.hash(employee_data.password)
-
         payload = {
             "EmID": employee_data.employeeId,
             "EmName": employee_data.name,
@@ -161,174 +226,76 @@ async def register_employee(employee_data: EmployeeCreate):
             "FDW": now_utc.isoformat(),
             "EmPass": hashed_password
         }
-        
         response = supabase.table("Employees").insert([payload]).execute()
-
-        supabase_error = getattr(response, 'error', None)
-        if supabase_error:
-            raise HTTPException(status_code=500, detail=f"Failed to register employee: {getattr(supabase_error, 'message', str(supabase_error))}")
-        
+        if getattr(response, 'error', None):
+            raise HTTPException(status_code=500, detail=f"Failed to register employee: {getattr(response.error, 'message', str(response.error))}")
         return {"message": "Employee registered successfully!", "data": response.data}
     except Exception as e:
-        print(f"Error registering employee: {e}")
         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
 
-# NEW: Employee Login Endpoint
 @app.post("/login-employee")
 async def login_employee(employee_login_data: EmployeeLogin):
     try:
-        # 1. Fetch employee by EmID, including Name and SurName
-        response = supabase.table("Employees").select("EmID", "EmPass", "IsAdmin", "EmName", "EmSurName").eq("EmID", employee_login_data.emId).execute() 
-        
-        supabase_error = getattr(response, 'error', None)
-        if supabase_error:
-            print(f"Supabase error during login: {supabase_error}")
-            raise HTTPException(status_code=500, detail=f"Database error: {getattr(supabase_error, 'message', str(supabase_error))}")
-
-        employee_data = response.data
-        if not employee_data:
+        response = supabase.table("Employees").select("EmID, EmPass, IsAdmin, EmName, EmSurName").eq("EmID", employee_login_data.emId).execute()
+        if getattr(response, 'error', None):
+            raise HTTPException(status_code=500, detail=f"Database error: {getattr(response.error, 'message', str(response.error))}")
+        if not response.data:
             raise HTTPException(status_code=401, detail="Invalid Employee ID or Password.")
-        
-        employee = employee_data[0] # Assuming EmID is unique, there's only one result
-
-        # 2. Verify password
+        employee = response.data[0]
         if not pwd_context.verify(employee_login_data.password, employee["EmPass"]):
             raise HTTPException(status_code=401, detail="Invalid Employee ID or Password.")
-        
-        # 3. Successful login: Return success, admin status, and employee name/surname
         return {
-            "success": True,
-            "message": "Login successful!",
-            "emId": employee["EmID"],
-            "isAdmin": employee["IsAdmin"],
-            "name": employee["EmName"],
-            "surname": employee["EmSurName"]
+            "success": True, "message": "Login successful!", "emId": employee["EmID"],
+            "isAdmin": employee["IsAdmin"], "name": employee["EmName"], "surname": employee["EmSurName"]
         }
-
     except HTTPException:
         raise
     except Exception as e:
-        print(f"An unexpected error occurred during employee login: {type(e).__name__} - {str(e)}")
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred during login: {str(e)}")
-
 
 @app.post("/register-user")
 async def register_user(user_data: dict):
     try:
-        balance_value = user_data.get("balance")
-        if balance_value is not None:
-            try:
-                balance_value = float(balance_value) if str(balance_value).strip() != '' else None
-            except ValueError:
-                raise HTTPException(status_code=400, detail="Balance must be a valid number.")
-
+        balance_value = float(user_data.get("balance")) if str(user_data.get("balance", "")).strip() else None
         payload = {
-            "National_ID": int(user_data.get("nationalId")) if user_data.get("nationalId") is not None else None,
-            "Name": user_data.get("firstName"),
-            "SurName": user_data.get("lastName"),
+            "National_ID": int(user_data.get("nationalId")) if user_data.get("nationalId") else None,
+            "Name": user_data.get("firstName"), "SurName": user_data.get("lastName"),
             "BirthDate": user_data.get("birthDate"),
-            "PhoneNo": int(user_data.get("phoneNo")) if user_data.get("phoneNo") is not None else None,
-            "Gender": user_data.get("gender"),
-            "DOR": datetime.datetime.now(datetime.timezone.utc).isoformat(), # Using UTC
-            "Email": user_data.get("email") or None,
-            "Balance": balance_value,
+            "PhoneNo": int(user_data.get("phoneNo")) if user_data.get("phoneNo") else None,
+            "Gender": user_data.get("gender"), "DOR": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "Email": user_data.get("email") or None, "Balance": balance_value,
         }
-
-        print(f"Payload for Supabase: {payload}")
-
         response = supabase.table("Customer").insert([payload]).execute()
-
-        print(f"Supabase raw response: {response}")
-
-        supabase_error = getattr(response, 'error', None)
-
-        if supabase_error:
-            print(f"Supabase error object type: {type(supabase_error)}")
-            print(f"Supabase error details: {supabase_error}")
-            error_message = getattr(supabase_error, 'message', str(supabase_error))
-            raise HTTPException(status_code=500, detail=f"Failed to save data: {error_message}")
-        elif not response.data and not supabase_error:
-            print("Supabase operation successful, but no data was explicitly returned in response.")
-            return {"message": "User registered successfully!", "data": []}
-        else:
-            data = response.data
-            print(f"Inserted: {data}")
-            return {"message": "User registered successfully!", "data": data}
-
-    except ValueError as ve:
-        print(f"Validation error in payload: {str(ve)}")
-        raise HTTPException(status_code=400, detail=f"Invalid data format: {str(ve)}")
-    except HTTPException:
-        raise
+        if getattr(response, 'error', None):
+            raise HTTPException(status_code=500, detail=f"Failed to save data: {getattr(response.error, 'message', str(response.error))}")
+        return {"message": "User registered successfully!", "data": response.data or []}
+    except (ValueError, TypeError) as ve:
+        raise HTTPException(status_code=400, detail=f"Invalid data format: {ve}")
     except Exception as e:
-        print(f"An unexpected error occurred in register_user: {type(e).__name__} - {str(e)}")
-        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")
 
 @app.get("/registration-records")
 async def get_registration_records():
     try:
-        response = supabase.table("Customer").select("National_ID", "Name", "SurName", "DOR", "Balance").order("DOR", desc=True).execute()
-
-        supabase_error = getattr(response, 'error', None)
-
-        if supabase_error:
-            print(f"Supabase fetch error for registrations: {supabase_error}")
-            error_message = getattr(supabase_error, 'message', str(supabase_error))
-            raise HTTPException(status_code=500, detail=f"Failed to fetch registration records: {error_message}")
-        elif not response.data:
-            print("No registration records found.")
-            return []
-        else:
-            return response.data
-
-    except HTTPException:
-        raise
+        response = supabase.table("Customer").select("National_ID, Name, SurName, DOR, Balance").order("DOR", desc=True).execute()
+        if getattr(response, 'error', None):
+            raise HTTPException(status_code=500, detail=f"Failed to fetch registration records: {getattr(response.error, 'message', str(response.error))}")
+        return response.data or []
     except Exception as e:
-        print(f"An unexpected error occurred while fetching registration records: {type(e).__name__} - {str(e)}")
-        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")
 
 @app.get("/registration-stats")
 async def get_registration_stats():
-    """
-    Fetches registration statistics (today, this week, this month).
-    Counts are based on the server's current date in UTC.
-    Updated to handle Supabase client response structure.
-    """
     try:
-        now = datetime.datetime.now(datetime.timezone.utc) # Using UTC
-        
-        # Start of today (UTC)
+        now = datetime.datetime.now(datetime.timezone.utc)
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        
-        # Start of the week (Monday, UTC) - Python's weekday() is 0=Monday, 6=Sunday
         week_start = today_start - datetime.timedelta(days=today_start.weekday())
-        
-        # Start of the month (UTC)
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         
-        today_count_response = supabase.table("Customer").select("*", count="exact")\
-            .gte("DOR", today_start.isoformat())\
-            .execute()
-        
-        week_count_response = supabase.table("Customer").select("*", count="exact")\
-            .gte("DOR", week_start.isoformat())\
-            .execute()
-            
-        month_count_response = supabase.table("Customer").select("*", count="exact")\
-            .gte("DOR", month_start.isoformat())\
-            .execute()
+        today_count = supabase.table("Customer").select("*", count="exact").gte("DOR", today_start.isoformat()).execute().count
+        week_count = supabase.table("Customer").select("*", count="exact").gte("DOR", week_start.isoformat()).execute().count
+        month_count = supabase.table("Customer").select("*", count="exact").gte("DOR", month_start.isoformat()).execute().count
 
-        # Extract counts directly from the .count attribute
-        today_count = today_count_response.count
-        week_count = week_count_response.count
-        month_count = month_count_response.count
-
-        return {
-            "today": today_count,
-            "week": week_count,
-            "month": month_count
-        }
-
+        return {"today": today_count, "week": week_count, "month": month_count}
     except Exception as e:
-        print(f"Error fetching registration stats: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch registration stats: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch registration stats: {e}")

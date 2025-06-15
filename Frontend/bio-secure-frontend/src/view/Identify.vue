@@ -27,7 +27,7 @@ const verificationType = ref(null);
 // State for results
 const result = ref(null);
 const matchFaceImageUrl = ref(null);
-const matchIrisImageUrl = ref(null); // Placeholder for customer's stored iris image
+const isLoading = ref(false);
 
 // --- Fetch Customers on Component Load ---
 onMounted(async () => {
@@ -35,7 +35,6 @@ onMounted(async () => {
     const res = await fetch("http://localhost:8000/customers");
     if (!res.ok) throw new Error("Failed to fetch customers");
     const data = await res.json();
-    // --- MODIFIED: Display name now includes National ID ---
     customers.value = data.map(c => ({...c, displayName: `${c.Name} ${c.SurName} (ID: ${c.National_ID})`}));
   } catch (err) {
     console.error("Error fetching customers:", err);
@@ -43,26 +42,20 @@ onMounted(async () => {
   }
 });
 
-// --- MODIFIED: Search logic now includes National ID ---
+// --- Search logic now includes National ID ---
 const filteredCustomers = computed(() => {
   if (query.value === '') {
     return customers.value;
   }
-  
   const searchTerm = query.value.toLowerCase();
-  
   return customers.value.filter((customer) => {
-    // Check if the name matches
     const nameMatch = customer.displayName.toLowerCase().includes(searchTerm);
-    // Check if the ID matches (users will type the number, so no need for toLowerCase)
     const idMatch = String(customer.National_ID).includes(query.value);
-    
     return nameMatch || idMatch;
   });
 });
 
 // --- File Handling Functions ---
-
 function triggerFaceUpload() {
   document.getElementById("faceFileInput").click();
 }
@@ -75,23 +68,19 @@ function handleFileChange(event, type) {
   const file = event.target.files[0];
   if (!file) return;
 
-  // Reset previous results on any new file upload
   result.value = null;
   matchFaceImageUrl.value = null;
-  matchIrisImageUrl.value = null;
 
   if (type === 'face') {
     verificationType.value = 'face';
     selectedFaceFile.value = file;
     facePreview.value = URL.createObjectURL(file);
-    // Clear the other biometric to avoid confusion
     selectedIrisFile.value = null;
     irisPreview.value = null;
   } else if (type === 'iris') {
     verificationType.value = 'iris';
     selectedIrisFile.value = file;
     irisPreview.value = URL.createObjectURL(file);
-    // Clear the other biometric
     selectedFaceFile.value = null;
     facePreview.value = null;
   }
@@ -107,41 +96,38 @@ async function verifyIdentity() {
     alert("Please provide a face or iris scan to verify.");
     return;
   }
-
-  // --- Handle Iris Verification (Placeholder) ---
   if (verificationType.value === 'iris') {
-    alert("Iris recognition backend is not implemented yet. This is a placeholder action.");
-    result.value = { verified: false, message: "Iris verification is not yet supported." };
+    alert("Iris recognition backend is not implemented yet.");
     return;
   }
 
-  // --- Handle Face Verification ---
-  if (verificationType.value === 'face') {
-    const formData = new FormData();
-    formData.append("image", selectedFaceFile.value);
-    formData.append("customer_id", selectedCustomer.value.National_ID); // Send ID from selected object
+  isLoading.value = true;
+  const formData = new FormData();
+  formData.append("image", selectedFaceFile.value);
+  formData.append("customer_id", selectedCustomer.value.National_ID);
 
-    try {
-      const res = await fetch("http://localhost:8000/verify", {
-        method: "POST",
-        body: formData
-      });
-      const data = await res.json();
-      result.value = data;
-      matchFaceImageUrl.value = data.image_url || null;
-      if (!res.ok) {
-        alert(`Error: ${data.detail || res.statusText}`);
-      }
-    } catch (err) {
-      console.error("Network or unexpected error:", err);
-      result.value = { verified: false, message: "Error during verification." };
+  try {
+    const res = await fetch("http://localhost:8000/verify", {
+      method: "POST",
+      body: formData
+    });
+    const data = await res.json();
+    result.value = data;
+    matchFaceImageUrl.value = data.image_url || null;
+    if (!res.ok) {
+      alert(`Error: ${data.detail || res.statusText}`);
     }
+  } catch (err) {
+    console.error("Network or unexpected error:", err);
+    result.value = { verified: false, message: "Error during verification." };
+  } finally {
+    isLoading.value = false;
   }
 }
 
 // Computed property to dynamically disable the verify button
 const isVerifyDisabled = computed(() => {
-  return !selectedCustomer.value || !verificationType.value;
+  return !selectedCustomer.value || !verificationType.value || isLoading.value;
 });
 </script>
 
@@ -209,7 +195,8 @@ const isVerifyDisabled = computed(() => {
     </div>
     
     <button @click="verifyIdentity" :disabled="isVerifyDisabled" class="bg-blue-600 hover:bg-blue-700 text-white font-bold text-lg px-16 py-3 rounded-full shadow-lg transition-transform transform hover:scale-105 disabled:bg-gray-400 disabled:cursor-not-allowed disabled:transform-none mt-4">
-      VERIFY IDENTITY
+      <span v-if="isLoading">Verifying...</span>
+      <span v-else>VERIFY IDENTITY</span>
     </button>
 
     <div v-if="result" class="w-full max-w-2xl mt-6">
