@@ -17,13 +17,10 @@ const handleLogout = () => {
 
 <template>
   <nav class="bg-[#1b2d3d] px-6 py-3 flex justify-between items-center">
-    <router-link
-      to="/main"
-      class="text-white font-bold text-xl tracking-wide hover:underline"
-    >
-      {{ isLinkPage ? 'Link' : 'Bio-secure' }}
-    </router-link>
-
+    <div class="text-white font-bold text-xl tracking-wide ">
+      <p>Bio-secure</p>
+    </div>
+    
     <button
       v-if="authState.isLoggedIn"
       @click="handleLogout"
