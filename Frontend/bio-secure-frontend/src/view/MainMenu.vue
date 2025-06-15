@@ -1,3 +1,7 @@
+<script lang="ts">
+
+</script>
+
 <template>
   <div class="min-h-screen flex items-center justify-center">
     <div class="grid grid-cols-3 gap-28">
