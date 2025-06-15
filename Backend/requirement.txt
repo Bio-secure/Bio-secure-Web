@@ -8,3 +8,10 @@ supabase
 dotenv
 passlib[bcrypt]
 pytz
+segmentation_models_pytorch
+timm
+numpy
+PIL
+cv2
+spicy
+pydantic
