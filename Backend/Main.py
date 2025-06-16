@@ -3,6 +3,7 @@ import os
 import shutil
 import datetime
 import traceback
+from typing import Literal, Optional
 import uuid
 import math # Added for ArcFace
 import scipy.ndimage # Added for Daugman normalization
@@ -27,7 +28,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from supabase import create_client, Client
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from passlib.context import CryptContext
 from scipy.spatial.distance import cosine # Already present
 
