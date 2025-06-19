@@ -45,7 +45,7 @@ export default defineComponent({
         <img src="../assets/Identify.png" alt="Identify" class="w-60 h-60 mb-8" />
         <RouterLink to="/identify">
           <button class="mt-6 bg-blue-300 text-black font-bold text-2xl px-8 py-4 rounded-2xl shadow-md hover:bg-blue-400">
-            IDENTIFY
+            Transaction
           </button>
         </RouterLink>
       </div>
