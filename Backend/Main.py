@@ -75,20 +75,22 @@ def root():
 
 @app.post("/register-biometric")
 async def register_biometric(
-    national_id: str = Form(...),
     face_image: UploadFile = File(...),
     iris_image: UploadFile = File(None) # Optional
 ):
+    # Check if deepface server is avalible 
     if not DeepFace:
         raise HTTPException(status_code=503, detail="Facial recognition service is not available.")
     
-    face_filename = f"{national_id}_face_{uuid.uuid4()}.{face_image.filename.split('.')[-1]}"
-    face_image_path = os.path.join(UPLOAD_FOLDER, face_filename)
+
+    face_filename = f"face_{uuid.uuid4()}.{face_image.filename.split('.')[-1]}" # for creating the registered image name
+    face_image_path = os.path.join(UPLOAD_FOLDER, face_filename) # calling the image from the database
 
     try:
         with open(face_image_path, "wb") as buffer:
             shutil.copyfileobj(face_image.file, buffer)
 
+        # embedding the upload image 
         embedding_objs = DeepFace.represent(img_path=face_image_path, model_name="VGG-Face", enforce_detection=False)
         if not embedding_objs or 'embedding' not in embedding_objs[0]:
             raise HTTPException(status_code=400, detail="Could not generate a face embedding. Ensure the image contains a clear face.")
@@ -97,17 +99,19 @@ async def register_biometric(
         with open(face_image_path, "rb") as f:
             supabase.storage.from_(BIOMETRIC_BUCKET).upload(file=f, path=face_filename)
         
+        # call a publc url from supabase
         face_image_url = supabase.storage.from_(BIOMETRIC_BUCKET).get_public_url(face_filename)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing face image: {e}")
-    finally:
+    finally: #if the image path already exist remove the previous one
         if os.path.exists(face_image_path):
+            print("Face image already exist in the ")
             os.remove(face_image_path)
 
     iris_image_url = None
     if iris_image:
-        iris_filename = f"{national_id}_iris_{uuid.uuid4()}.{iris_image.filename.split('.')[-1]}"
+        iris_filename = f"iris_{uuid.uuid4()}.{iris_image.filename.split('.')[-1]}"
         try:
             with open(os.path.join(UPLOAD_FOLDER, iris_filename), "wb") as buffer:
                 shutil.copyfileobj(iris_image.file, buffer)
@@ -124,7 +128,7 @@ async def register_biometric(
 
     try:
         payload = {
-            "National_ID": int(national_id),
+            "id": str(uuid.uuid4()),
             "face_image_url": face_image_url,
             "face_embedding": face_embedding,
             "iris_image_url": iris_image_url
@@ -132,7 +136,7 @@ async def register_biometric(
         
         supabase.table("Biometric").upsert(payload, on_conflict="National_ID").execute()
 
-        return {"message": f"Biometric data registered successfully for National_ID {national_id}."}
+        return {"message": f"Biometric data registered successfully for ID {id}."}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An error occurred during database insertion: {str(e)}")
