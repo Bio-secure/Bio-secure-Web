@@ -3,18 +3,25 @@ import os
 import shutil
 import datetime
 import traceback
+from typing import Literal, Optional
 import uuid
+import math # Added for ArcFace
+import scipy.ndimage # Added for Daugman normalization
+import numpy as np # Already present, but explicitly for iris processing
+import cv2 # Added for image processing (OpenCV)
+import base64 # Added for image decoding
+from PIL import Image # Added for image decoding
+import io # Added for image decoding
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Form, UploadFile, File, HTTPException
+from fastapi import FastAPI, Form, UploadFile, File, HTTPException, Body # Added Body for JSON requests
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-import numpy as np
 from supabase import create_client, Client
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from passlib.context import CryptContext
-from scipy.spatial.distance import cosine
+from scipy.spatial.distance import cosine # Already present
 
 
 # Define Pydantic models
@@ -28,6 +35,23 @@ class EmployeeCreate(BaseModel):
 class EmployeeLogin(BaseModel):
     emId: int
     password: str
+
+class IrisAuthentication(BaseModel): 
+    user_id: str | None = None 
+    image_data: str 
+
+class IrisAuthResponse(BaseModel):
+    message: str
+    user_id: str | None = None # Claimed user_id
+    is_authenticated: bool | None = None
+    similarity: float | None = None # Similarity to claimed user_id
+    matched_user_id: str | None = None # Best matched user_id in open-set
+    best_similarity: float | None = None # Best similarity in open-set
+    detail: str | None = None
+
+# Authentication threshold (cosine similarity for iris)
+AUTHENTICATION_THRESHOLD = 0.65 # Adjust this value based on your desired security level
+
 
 # Password hashing context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -57,6 +81,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+class TransactionCreate(BaseModel):
+    customer_id: int
+    employee_id: int
+    transaction_type: Literal['deposit', 'withdrawal'] 
+    amount: float = Field(..., gt=0) 
+    note: Optional[str] = None
 
 UPLOAD_FOLDER = "uploads"
 ASSET_FOLDER = "asset"
@@ -154,6 +185,8 @@ def get_all_customers():
     except Exception as e:
         raise HTTPException(status_code=500, detail="Could not fetch customer list.")
 
+# In Main.py
+
 @app.post("/verify")
 async def verify_customer_identity(
     image: UploadFile = File(...),
@@ -162,12 +195,13 @@ async def verify_customer_identity(
     image_path = os.path.join(UPLOAD_FOLDER, image.filename)
     
     try:
-        # --- Step 1: Save the Uploaded Image ---
+        # Step 1: Save the Uploaded Image
         with open(image_path, "wb") as buffer:
             shutil.copyfileobj(image.file, buffer)
 
-        # --- Step 2: Generate Embedding from the Image ---
+        # Step 2: Generate Embedding from the Image
         try:
+            # Enforce_detection=True makes sure a face is found
             embedding_objs = DeepFace.represent(
                 img_path=image_path, 
                 model_name="VGG-Face", 
@@ -175,12 +209,13 @@ async def verify_customer_identity(
             )
             uploaded_embedding = embedding_objs[0]['embedding']
         except ValueError as e:
+            # This provides a clear error if no face is in the image
             raise HTTPException(status_code=400, detail=f"Could not process image: No face detected. ({str(e)})")
 
-        # --- Step 3: Fetch Stored Biometric Data from Database ---
+        # Step 3: Fetch Stored Biometric Data from Database
         db_response = supabase.table('Biometric').select('face_embedding, face_image_url').eq('National_ID', customer_id).single().execute()
         
-        # --- Step 4: Validate and Clean the Database Response ---
+        # Step 4: Validate the Database Response
         if not db_response.data:
             raise HTTPException(status_code=404, detail=f"Biometric data not found for customer ID: {customer_id}")
         
@@ -190,32 +225,92 @@ async def verify_customer_identity(
         if not stored_embedding_str:
             raise HTTPException(status_code=404, detail="Stored face embedding not found for this customer.")
 
+        # Correctly parse the string from the DB into a list of numbers
         parsed_list = json.loads(stored_embedding_str)
         stored_embedding = [float(x) for x in parsed_list]
 
-        # --- Step 5: Compare the Faces and Return Result ---
+        # Step 5: Compare the Faces and Return Result
         distance = cosine(uploaded_embedding, stored_embedding)
 
-        # FINAL FIX: Convert the numpy.bool_ to a standard Python bool.
+        # Convert the result to a standard Python boolean to prevent errors
         is_match = bool(distance < DISTANCE_THRESHOLD)
 
         return {
             "verified": is_match,
             "message": "Verified Successfully" if is_match else "Verification Failed: Faces do not match.",
-            "distance": distance,
+            "distance": float(distance),
             "image_url": match_image_url
         }
 
     except HTTPException:
+        # Re-raise known HTTP errors directly
         raise
     except Exception as e:
+        # Catch any other unexpected errors and report them
         print(f"An unexpected server error occurred: {e}")
         raise HTTPException(status_code=500, detail=f"Specific Backend Error: {str(e)}")
         
     finally:
+        # This always runs to clean up the uploaded file
         if os.path.exists(image_path):
             os.remove(image_path)
 
+# In Main.py
+
+@app.get("/customer-details/{customer_id}")
+async def get_customer_details(customer_id: int):
+    """
+    Fetches detailed information for a single customer, including their
+    biometric face image URL and their recent transaction history with employee names.
+    """
+    try:
+        # Step 1 & 2: Fetch customer and biometric data (same as before)
+        customer_response = supabase.table("Customer").select("*").eq("National_ID", customer_id).single().execute()
+        if not customer_response.data:
+            raise HTTPException(status_code=404, detail="Customer not found")
+        customer_data = customer_response.data
+        
+        try:
+            biometric_response = supabase.table("Biometric").select("face_image_url").eq("National_ID", customer_id).single().execute()
+            customer_data['face_image_url'] = biometric_response.data['face_image_url'] if biometric_response.data else None
+        except Exception:
+            customer_data['face_image_url'] = None
+        
+        # Step 3: Fetch recent transactions for the customer
+        transactions_response = supabase.table("Transactions") \
+            .select("id, created_at, transaction_type, amount, note, employee_id") \
+            .eq("customer_id", customer_id) \
+            .order("created_at", desc=True) \
+            .limit(15) \
+            .execute()
+
+        enriched_transactions = []
+        if transactions_response.data:
+            for tx in transactions_response.data:
+                employee_name = "System" # Default name
+                if tx.get("employee_id"):
+                    try:
+                        # Fetch the employee's name for each transaction
+                        employee_response = supabase.table("Employees").select("EmName, EmSurName").eq("EmID", tx["employee_id"]).single().execute()
+                        if employee_response.data:
+                            emp = employee_response.data
+                            employee_name = f"{emp['EmName']} {emp['EmSurName']}"
+                    except Exception:
+                        employee_name = "Unknown Employee"
+                tx["employee_name"] = employee_name
+                enriched_transactions.append(tx)
+
+        customer_data['transactions'] = enriched_transactions
+
+        return customer_data
+
+    except Exception as e:
+        print(f"Error fetching customer details: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch customer details.")
+
+    except Exception as e:
+        print(f"Error fetching customer details: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch customer details.")
 
 @app.post("/register-employee")
 async def register_employee(employee_data: EmployeeCreate):
@@ -277,6 +372,49 @@ async def register_user(user_data: dict):
         raise HTTPException(status_code=400, detail=f"Invalid data format: {ve}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")
+    
+# In Main.py
+@app.post("/transaction")
+async def create_transaction(transaction: TransactionCreate):
+    # ... (The logic for getting balance and updating the Customer table is the same) ...
+    try:
+        # --- Steps 1 & 2 are the same ---
+        customer_response = supabase.table("Customer").select("Balance").eq("National_ID", transaction.customer_id).single().execute()
+        if not customer_response.data:
+            raise HTTPException(status_code=404, detail="Customer not found")
+        current_balance = customer_response.data.get('Balance') or 0
+        
+        if transaction.transaction_type == 'withdrawal':
+            if current_balance < transaction.amount:
+                raise HTTPException(status_code=400, detail="Insufficient funds for withdrawal.")
+            new_balance = current_balance - transaction.amount
+        else: # Deposit
+            new_balance = current_balance + transaction.amount
+
+        # --- Step 3 is the same ---
+        supabase.table("Customer").update({"Balance": new_balance}).eq("National_ID", transaction.customer_id).execute()
+
+        # --- Step 4 is UPDATED to include employee_id ---
+        transaction_record = {
+            "customer_id": transaction.customer_id,
+            "employee_id": transaction.employee_id,  # NEW
+            "transaction_type": transaction.transaction_type,
+            "amount": transaction.amount,
+            "note": transaction.note,
+            "balance_after": new_balance
+        }
+        supabase.table("Transactions").insert(transaction_record).execute()
+
+        # --- Step 5 is the same ---
+        return {
+            "message": f"{transaction.transaction_type.capitalize()} successful!",
+            "new_balance": new_balance
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"An error occurred during the transaction: {e}")
+        raise HTTPException(status_code=500, detail="An internal error occurred during the transaction.")
 
 @app.get("/registration-records")
 async def get_registration_records():
