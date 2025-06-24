@@ -376,14 +376,14 @@ async def register_user(user_data: dict):
 # In Main.py
 @app.post("/transaction")
 async def create_transaction(transaction: TransactionCreate):
-    # ... (The logic for getting balance and updating the Customer table is the same) ...
     try:
-        # --- Steps 1 & 2 are the same ---
+        # Finding the customer balance in db
         customer_response = supabase.table("Customer").select("Balance").eq("National_ID", transaction.customer_id).single().execute()
         if not customer_response.data:
             raise HTTPException(status_code=404, detail="Customer not found")
         current_balance = customer_response.data.get('Balance') or 0
         
+        # Chose transaction type
         if transaction.transaction_type == 'withdrawal':
             if current_balance < transaction.amount:
                 raise HTTPException(status_code=400, detail="Insufficient funds for withdrawal.")
@@ -391,10 +391,10 @@ async def create_transaction(transaction: TransactionCreate):
         else: # Deposit
             new_balance = current_balance + transaction.amount
 
-        # --- Step 3 is the same ---
+        # Update the balance of the chosen customer
         supabase.table("Customer").update({"Balance": new_balance}).eq("National_ID", transaction.customer_id).execute()
 
-        # --- Step 4 is UPDATED to include employee_id ---
+        # update with transaction record
         transaction_record = {
             "customer_id": transaction.customer_id,
             "employee_id": transaction.employee_id,  # NEW
@@ -405,7 +405,6 @@ async def create_transaction(transaction: TransactionCreate):
         }
         supabase.table("Transactions").insert(transaction_record).execute()
 
-        # --- Step 5 is the same ---
         return {
             "message": f"{transaction.transaction_type.capitalize()} successful!",
             "new_balance": new_balance
