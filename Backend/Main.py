@@ -23,6 +23,10 @@ from pydantic import BaseModel, Field
 from passlib.context import CryptContext
 from scipy.spatial.distance import cosine # Already present
 
+import httpx
+
+from postgrest.exceptions import APIError as PostgrestAPIError
+
 
 # Define Pydantic models
 class EmployeeCreate(BaseModel):
@@ -104,18 +108,21 @@ BIOMETRIC_BUCKET = os.getenv("BIOMETRIC_BUCKET")
 def root():
     return {"message": "FastAPI is running!"}
 
-@app.post("/register-biometric")
+@app.post("/register-biometric") # Use router.post if you define a router
 async def register_biometric(
+    national_id: str = Form(...),
     face_image: UploadFile = File(...),
     iris_image: UploadFile = File(None) # Optional
 ):
-    # Check if deepface server is avalible 
+    # Check if deepface server is available
     if not DeepFace:
         raise HTTPException(status_code=503, detail="Facial recognition service is not available.")
-    
 
-    face_filename = f"face_{uuid.uuid4()}.{face_image.filename.split('.')[-1]}" # for creating the registered image name
-    face_image_path = os.path.join(UPLOAD_FOLDER, face_filename) # calling the image from the database
+    face_filename = f"face_{uuid.uuid4()}.{face_image.filename.split('.')[-1]}"
+    face_image_path = os.path.join(UPLOAD_FOLDER, face_filename)
+
+    face_image_url = None # Initialize to None
+    face_embedding = None # Initialize to None
 
     try:
         with open(face_image_path, "wb") as buffer:
@@ -127,50 +134,102 @@ async def register_biometric(
             raise HTTPException(status_code=400, detail="Could not generate a face embedding. Ensure the image contains a clear face.")
         face_embedding = embedding_objs[0]['embedding']
 
+        # Upload face image to Supabase storage
         with open(face_image_path, "rb") as f:
             supabase.storage.from_(BIOMETRIC_BUCKET).upload(file=f, path=face_filename)
         
-        # call a publc url from supabase
+        # Get public URL
         face_image_url = supabase.storage.from_(BIOMETRIC_BUCKET).get_public_url(face_filename)
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing face image: {e}")
-    finally: #if the image path already exist remove the previous one
+        traceback.print_exc() # Log the full traceback
+        raise HTTPException(status_code=500, detail=f"Error processing face image or uploading to storage: {e}")
+    finally:
         if os.path.exists(face_image_path):
-            print("Face image already exist in the ")
+            print(f"Removing temporary face image file: {face_image_path}")
             os.remove(face_image_path)
 
+    IRIS_API_URL = "http://localhost:8081"
+
     iris_image_url = None
+    iris_embedding = None # This line is correct and should remain here
+
     if iris_image:
         iris_filename = f"iris_{uuid.uuid4()}.{iris_image.filename.split('.')[-1]}"
+        temp_iris_image_path = os.path.join(UPLOAD_FOLDER, iris_filename)
         try:
-            with open(os.path.join(UPLOAD_FOLDER, iris_filename), "wb") as buffer:
+            with open(temp_iris_image_path, "wb") as buffer:
                 shutil.copyfileobj(iris_image.file, buffer)
-            
-            with open(os.path.join(UPLOAD_FOLDER, iris_filename), "rb") as f:
-                supabase.storage.from_(BIOMETRIC_BUCKET).upload(file=f, path=iris_filename)
-            
-            iris_image_url = supabase.storage.from_(BIOMETRIC_BUCKET).get_public_url(iris_filename)
-        except Exception as e:
-            print(f"Could not process optional iris image: {e}")
-        finally:
-            if os.path.exists(os.path.join(UPLOAD_FOLDER, iris_filename)):
-                os.remove(os.path.join(UPLOAD_FOLDER, iris_filename))
 
+            # --- Prepare image for sending to Iris API ---
+            with open(temp_iris_image_path, "rb") as f_read:
+                iris_bytes = f_read.read()
+            iris_b64 = base64.b64encode(iris_bytes).decode('utf-8')
+
+            # Make HTTP request to iris_model_apis.py to get embedding
+            async with httpx.AsyncClient() as client:
+                iris_embedding_response = await client.post(
+                    f"{IRIS_API_URL}/get-iris-embedding",
+                    json={"image_data": iris_b64},
+                    timeout=30.0 # Adjust timeout as needed
+                )
+                iris_embedding_response.raise_for_status() # Raise an exception for HTTP errors (4xx or 5xx)
+                iris_embedding_data = iris_embedding_response.json()
+                iris_embedding = iris_embedding_data.get("embedding")
+
+                if not iris_embedding:
+                    raise ValueError("Iris API returned no embedding.")
+
+            # Upload iris image to Supabase storage (still happens from Main.py)
+            with open(temp_iris_image_path, "rb") as f_upload:
+                supabase.storage.from_(BIOMETRIC_BUCKET).upload(file=f_upload, path=iris_filename)
+
+            iris_image_url = supabase.storage.from_(BIOMETRIC_BUCKET).get_public_url(iris_filename)
+
+        except httpx.HTTPStatusError as e:
+            print(f"Error calling Iris API: {e.response.status_code} - {e.response.text}")
+            traceback.print_exc()
+            iris_embedding = None
+            iris_image_url = None
+            # Consider raising HTTPException here if iris embedding is mandatory
+            # raise HTTPException(status_code=500, detail=f"Failed to get iris embedding from service: {e.response.text}")
+        except Exception as e:
+            print(f"Warning: Could not process optional iris image: {e}")
+            traceback.print_exc()
+            iris_embedding = None
+            iris_image_url = None
+        finally:
+            if os.path.exists(temp_iris_image_path):
+                print(f"Removing temporary iris image file: {temp_iris_image_path}")
+                os.remove(temp_iris_image_path)
+
+    # --- Database Insertion ---
     try:
         payload = {
-            "id": str(uuid.uuid4()),
+            "National_ID": int(national_id),
             "face_image_url": face_image_url,
-            "face_embedding": face_embedding,
-            "iris_image_url": iris_image_url
+            "face_embedding": json.dumps(face_embedding), # Store as JSON string for PostgreSQL JSONB/Text
+            "iris_image_url": iris_image_url,
+            "iris_embedding": json.dumps(iris_embedding) if iris_embedding is not None else None # Store as JSON string if exists
         }
         
+        # In newer Supabase client, .execute() will raise an exception on error.
+        # It will not return an object with an .error attribute.
         supabase.table("Biometric").upsert(payload, on_conflict="National_ID").execute()
 
-        return {"message": f"Biometric data registered successfully for ID {id}."}
+        return {"message": f"Biometric data registered successfully for ID {national_id}."}
 
+    except PostgrestAPIError as e:
+        # Catch specific Supabase API errors
+        print(f"Supabase API Error during biometric data insertion: {e}")
+        traceback.print_exc() # Print full traceback
+        raise HTTPException(status_code=500, detail=f"Failed to save biometric data: {e.message if hasattr(e, 'message') else str(e)}")
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"An error occurred during database insertion: {str(e)}")
+        # Catch any other unexpected errors during database insertion
+        print(f"An unexpected error occurred during database insertion: {e}")
+        traceback.print_exc() # Print full traceback for unexpected errors
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred during database insertion: {e}")
 
 
 @app.get("/customers")
@@ -440,3 +499,4 @@ async def get_registration_stats():
         return {"today": today_count, "week": week_count, "month": month_count}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch registration stats: {e}")
+    
