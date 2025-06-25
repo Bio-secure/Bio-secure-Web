@@ -1,17 +1,19 @@
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 // @ts-ignore
 import authState, { logout } from '../services/authService';
 
 const route = useRoute();
 const router = useRouter();
+const showAgreement = ref(false)
 
 // This computed property checks if the user is currently on the login page.
 const onLoginPage = computed(() => route.name === 'login');
 
 const handleLogout = () => {
   logout();
+  localStorage.setItem('privacyAcknowledged', 'false')
   router.push('/'); // The path for the 'login' route is '/'
 };
 </script>
