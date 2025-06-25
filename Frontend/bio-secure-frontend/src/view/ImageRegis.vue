@@ -156,7 +156,7 @@ async function registerBiometrics() {
         <label class="block text-lg font-medium text-gray-700 mb-2">2. Upload Biometric Images</label>
         <div class="flex flex-wrap justify-center gap-8 mt-4">
           <div class="flex flex-col items-center">
-            <p class="font-semibold text-gray-700 mb-2">Face Scan (Required)</p>
+            <p class="font-semibold text-gray-700 mb-2">Face Image</p>
             <div @click="triggerFaceUpload" class="w-48 h-48 bg-gray-100 rounded-lg border-2 border-dashed flex items-center justify-center cursor-pointer hover:border-blue-500 transition-colors">
               <img v-if="facePreview" :src="facePreview" class="w-full h-full object-cover rounded-lg">
               <span v-else class="text-gray-500 text-center p-2">Click to upload image</span>
@@ -164,7 +164,7 @@ async function registerBiometrics() {
             <input type="file" id="faceFile" @change="handleFileChange($event, 'face')" class="hidden" accept="image/*">
           </div>
           <div class="flex flex-col items-center">
-            <p class="font-semibold text-gray-700 mb-2">Iris Scan (Optional)</p>
+            <p class="font-semibold text-gray-700 mb-2">Iris Image</p>
             <div @click="triggerIrisUpload" class="w-48 h-48 bg-gray-100 rounded-lg border-2 border-dashed flex items-center justify-center cursor-pointer hover:border-blue-500 transition-colors">
               <img v-if="irisPreview" :src="irisPreview" class="w-full h-full object-cover rounded-lg">
               <span v-else class="text-gray-500 text-center p-2">Click to upload image</span>

@@ -77,7 +77,7 @@ async function verifyIdentity() {
   errorMessage.value = ''; // Clear previous errors
 
   let faceVerificationSuccess = false;
-  let irisVerificationSuccess = false; // Assume true if iris is not part of verificationMode or not yet processed
+  let irisVerificationSuccess = false; 
   let combinedMessage = "";
 
   // --- Step 1: Perform Face Verification ---
