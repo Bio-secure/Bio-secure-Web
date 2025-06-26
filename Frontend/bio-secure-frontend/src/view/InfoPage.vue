@@ -6,13 +6,12 @@ import authState from '../services/authService';
 // @ts-ignore
 import VerificationModal from '../components/VerificationModal.vue';
 
-// Updated interface to include the employee's name
 interface Transaction {
   id: number;
   date: string;
   description: string;
   amount: number;
-  employeeName?: string; // Optional property for employee name
+  employeeName?: string;
 }
 
 export default defineComponent({
@@ -45,6 +44,20 @@ export default defineComponent({
     const pendingTransaction = ref(null as any);
     const verificationModeRequired = ref('face');
 
+    // Computed property to format the amount with commas for display
+    const formattedAmount = computed({
+      get: () => {
+        if (transaction.value.amount === null || transaction.value.amount === 0) {
+          return '';
+        }
+        return transaction.value.amount.toLocaleString('en-US');
+      },
+      set: (newValue: string) => {
+        const numericValue = Number(newValue.replace(/[^0-9.]/g, ''));
+        transaction.value.amount = isNaN(numericValue) || numericValue === 0 ? null : numericValue;
+      }
+    });
+
     onMounted(async () => {
       const customerId = route.params.id;
       if (!customerId) {
@@ -69,14 +82,13 @@ export default defineComponent({
           face_image_url: data.face_image_url
         };
 
-        // Process transactions from the backend, now including employee_name
         if (data.transactions && data.transactions.length > 0) {
           transactions.value = data.transactions.map((tx: any) => ({
             id: tx.id,
             date: new Date(tx.created_at).toLocaleDateString('en-GB'),
             description: tx.transaction_type.charAt(0).toUpperCase() + tx.transaction_type.slice(1),
             amount: tx.transaction_type === 'deposit' ? tx.amount : -tx.amount,
-            employeeName: tx.employee_name || 'N/A' // Handle the employee name
+            employeeName: tx.employee_name || 'N/A'
           }));
         }
 
@@ -100,13 +112,12 @@ export default defineComponent({
         alert(`${details.transaction_type} successful!`);
         user.value.balance = data.new_balance;
 
-        // Add the new transaction to the top of the list for instant UI feedback
         const newTx: Transaction = {
             id: Date.now(),
             date: new Date().toLocaleDateString('en-GB'),
             description: details.transaction_type.charAt(0).toUpperCase() + details.transaction_type.slice(1),
             amount: details.transaction_type === 'deposit' ? details.amount : -details.amount,
-            employeeName: `${authState.name} ${authState.surname}` // Add current employee's name
+            employeeName: `${authState.name} ${authState.surname}`
         };
         transactions.value.unshift(newTx);
         
@@ -132,17 +143,13 @@ export default defineComponent({
         note: transaction.value.note
       };
       
-      // NEW, SIMPLIFIED LOGIC
-      // If amount is high, require full verification (Face + Iris)
       if (transactionDetails.amount >= 1000000) {
         verificationModeRequired.value = 'full';
       } 
-      // Otherwise, require face-only verification
       else {
         verificationModeRequired.value = 'face';
       }
 
-      // Open the verification modal for ALL transactions
       pendingTransaction.value = transactionDetails;
       isVerificationModalVisible.value = true;
     };
@@ -185,7 +192,8 @@ export default defineComponent({
       pendingTransaction,
       verificationModeRequired,
       handleVerificationSuccess,
-      handleVerificationFail
+      handleVerificationFail,
+      formattedAmount
     };
   }
 });
@@ -285,10 +293,11 @@ export default defineComponent({
             <div class="flex items-center border rounded px-2 mb-4">
               <span class="text-gray-500">฿</span>
               <input
-                v-model.number="transaction.amount"
-                type="number"
+                v-model="formattedAmount"
+                type="text"
+                inputmode="decimal"
                 placeholder="0.00"
-                class="flex-1 border-none outline-none p-2"
+                class="flex-1 border-none outline-none p-2 text-right"
               />
             </div>
 
