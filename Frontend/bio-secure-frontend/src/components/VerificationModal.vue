@@ -151,6 +151,8 @@ async function verifyIdentity() {
       emit('verification-fail', errorMessage.value);
       return; // Exit if iris authentication fails
     }
+  } else {
+    irisVerificationSuccess = true;
   }
 
   // --- Step 3: Conclude based on combined results ---
