@@ -54,7 +54,7 @@ class IrisAuthResponse(BaseModel):
     detail: str | None = None
 
 # Authentication threshold (cosine similarity for iris)
-AUTHENTICATION_THRESHOLD = 0.65 # Adjust this value based on your desired security level
+AUTHENTICATION_THRESHOLD = 0.30 # Adjust this value based on your desired security level
 
 
 # Password hashing context
@@ -246,11 +246,10 @@ def get_all_customers():
 
 # In Main.py
 
+# In Main.py
+
 @app.post("/verify")
-async def verify_customer_identity(
-    image: UploadFile = File(...),
-    customer_id: int = Form(...)
-):
+async def verify_customer_identity(image: UploadFile = File(...), customer_id: int = Form(...)):
     image_path = os.path.join(UPLOAD_FOLDER, image.filename)
     
     try:
@@ -260,7 +259,6 @@ async def verify_customer_identity(
 
         # Step 2: Generate Embedding from the Image
         try:
-            # Enforce_detection=True makes sure a face is found
             embedding_objs = DeepFace.represent(
                 img_path=image_path, 
                 model_name="VGG-Face", 
@@ -268,7 +266,6 @@ async def verify_customer_identity(
             )
             uploaded_embedding = embedding_objs[0]['embedding']
         except ValueError as e:
-            # This provides a clear error if no face is in the image
             raise HTTPException(status_code=400, detail=f"Could not process image: No face detected. ({str(e)})")
 
         # Step 3: Fetch Stored Biometric Data from Database
@@ -284,16 +281,29 @@ async def verify_customer_identity(
         if not stored_embedding_str:
             raise HTTPException(status_code=404, detail="Stored face embedding not found for this customer.")
 
-        # Correctly parse the string from the DB into a list of numbers
         parsed_list = json.loads(stored_embedding_str)
         stored_embedding = [float(x) for x in parsed_list]
 
-        # Step 5: Compare the Faces and Return Result
+        # Step 5: Compare the Faces
         distance = cosine(uploaded_embedding, stored_embedding)
-
-        # Convert the result to a standard Python boolean to prevent errors
         is_match = bool(distance < DISTANCE_THRESHOLD)
 
+        # --- Step 6: Log the Verification Attempt ---
+        try:
+            customer_info_res = supabase.table("Customer").select("Name, SurName").eq("National_ID", customer_id).single().execute()
+            log_payload = {
+                "Customer_National_ID": customer_id,
+                "Result": is_match,
+                "Name": customer_info_res.data.get("Name") if customer_info_res.data else "Unknown",
+                "SurName": customer_info_res.data.get("SurName") if customer_info_res.data else "Customer"
+            }
+            supabase.table("CustomerLogs").insert(log_payload).execute()
+        except Exception as log_e:
+            # If logging fails, print the error but don't stop the main process
+            print(f"CRITICAL: Failed to log customer verification attempt: {log_e}")
+        # --- End of Logging Block ---
+
+        # Step 7: Return the Final Result
         return {
             "verified": is_match,
             "message": "Verified Successfully" if is_match else "Verification Failed: Faces do not match.",
@@ -302,15 +312,12 @@ async def verify_customer_identity(
         }
 
     except HTTPException:
-        # Re-raise known HTTP errors directly
         raise
     except Exception as e:
-        # Catch any other unexpected errors and report them
         print(f"An unexpected server error occurred: {e}")
         raise HTTPException(status_code=500, detail=f"Specific Backend Error: {str(e)}")
         
     finally:
-        # This always runs to clean up the uploaded file
         if os.path.exists(image_path):
             os.remove(image_path)
 
@@ -391,25 +398,44 @@ async def register_employee(employee_data: EmployeeCreate):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
 
+# In Main.py
 @app.post("/login-employee")
 async def login_employee(employee_login_data: EmployeeLogin):
+    employee = None  # Define employee outside the try block
     try:
-        response = supabase.table("Employees").select("EmID, EmPass, IsAdmin, EmName, EmSurName").eq("EmID", employee_login_data.emId).execute()
-        if getattr(response, 'error', None):
-            raise HTTPException(status_code=500, detail=f"Database error: {getattr(response.error, 'message', str(response.error))}")
+        response = supabase.table("Employees").select("EmID, EmPass, IsAdmin, EmName, EmSurName").eq("EmID", employee_login_data.emId).single().execute()
+        
+        log_payload = {
+            "Employee_ID": employee_login_data.emId,
+            "EmResult": "Failure", # Default to failure
+        }
+
         if not response.data:
+            supabase.table("EmployeeLogs").insert(log_payload).execute()
             raise HTTPException(status_code=401, detail="Invalid Employee ID or Password.")
-        employee = response.data[0]
+        
+        employee = response.data
+        # Add employee name to the log payload
+        log_payload["EmName"] = employee.get("EmName")
+        log_payload["EmSurName"] = employee.get("EmSurName")
+
         if not pwd_context.verify(employee_login_data.password, employee["EmPass"]):
+            supabase.table("EmployeeLogs").insert(log_payload).execute()
             raise HTTPException(status_code=401, detail="Invalid Employee ID or Password.")
+        
+        # If successful, update result and log it
+        log_payload["EmResult"] = "Success"
+        supabase.table("EmployeeLogs").insert(log_payload).execute()
+        
         return {
             "success": True, "message": "Login successful!", "emId": employee["EmID"],
             "isAdmin": employee["IsAdmin"], "name": employee["EmName"], "surname": employee["EmSurName"]
         }
-    except HTTPException:
-        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"An unexpected error occurred during login: {str(e)}")
+        # Log failure on any other exception too
+        if 'log_payload' in locals():
+            supabase.table("EmployeeLogs").insert(log_payload).execute()
+        raise HTTPException(status_code=500, detail=f"An unexpected error during login: {str(e)}")
 
 @app.post("/register-user")
 async def register_user(user_data: dict):
@@ -499,4 +525,32 @@ async def get_registration_stats():
         return {"today": today_count, "week": week_count, "month": month_count}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch registration stats: {e}")
+
+@app.get("/customer-logs")
+async def get_customer_logs():
+    try:
+        response = supabase.table("CustomerLogs") \
+            .select("*") \
+            .order("Transaction_Timestamp", desc=True) \
+            .limit(10) \
+            .execute() # Added limit(10)
+        return response.data or []
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch customer logs: {str(e)}")
+
+@app.get("/employee-logs")
+async def get_employee_logs():
+    """
+    Fetches a list of the 10 most recent successful employee logins.
+    """
+    try:
+        response = supabase.table("EmployeeLogs") \
+            .select("*") \
+            .eq("EmResult", "Success") \
+            .order("Log_Timestamp", desc=True) \
+            .limit(10) \
+            .execute()
+        return response.data or []
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch employee logs: {str(e)}")
     
