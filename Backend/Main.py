@@ -14,7 +14,7 @@ from PIL import Image # Added for image decoding
 import io # Added for image decoding
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Form, UploadFile, File, HTTPException, Body # Added Body for JSON requests
+from fastapi import FastAPI, Form, UploadFile, File, HTTPException, BackgroundTasks, Body # Added Body for JSON requests
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -26,6 +26,7 @@ from scipy.spatial.distance import cosine # Already present
 import httpx
 
 from postgrest.exceptions import APIError as PostgrestAPIError
+from utils.email_utils import send_authentication_report_email
 
 
 # Define Pydantic models
@@ -80,7 +81,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -249,9 +250,15 @@ def get_all_customers():
 # In Main.py
 
 @app.post("/verify")
-async def verify_customer_identity(image: UploadFile = File(...), customer_id: int = Form(...)):
+async def verify_customer_identity(
+    background_tasks: BackgroundTasks, # Inject BackgroundTasks
+    image: UploadFile = File(...),
+    customer_id: int = Form(...)
+):
     image_path = os.path.join(UPLOAD_FOLDER, image.filename)
     
+    is_match = False
+    details = {} 
     try:
         # Step 1: Save the Uploaded Image
         with open(image_path, "wb") as buffer:
@@ -266,21 +273,26 @@ async def verify_customer_identity(image: UploadFile = File(...), customer_id: i
             )
             uploaded_embedding = embedding_objs[0]['embedding']
         except ValueError as e:
-            raise HTTPException(status_code=400, detail=f"Could not process image: No face detected. ({str(e)})")
+            details["message"] = f"Could not process image: No face detected. ({str(e)})"
+            details["detail"] = str(e)
+            raise HTTPException(status_code=400, detail=details["message"])
 
         # Step 3: Fetch Stored Biometric Data from Database
         db_response = supabase.table('Biometric').select('face_embedding, face_image_url').eq('National_ID', customer_id).single().execute()
         
         # Step 4: Validate the Database Response
         if not db_response.data:
-            raise HTTPException(status_code=404, detail=f"Biometric data not found for customer ID: {customer_id}")
+            details["message"] = f"Biometric data not found for customer ID: {customer_id}"
+            raise HTTPException(status_code=404, detail=details["message"])
         
         stored_embedding_str = db_response.data.get('face_embedding')
         match_image_url = db_response.data.get('face_image_url')
 
         if not stored_embedding_str:
-            raise HTTPException(status_code=404, detail="Stored face embedding not found for this customer.")
+            details["message"] = "Stored face embedding not found for this customer."
+            raise HTTPException(status_code=404, detail=details["message"])
 
+        # Correctly parse the string from the DB into a list of numbers
         parsed_list = json.loads(stored_embedding_str)
         stored_embedding = [float(x) for x in parsed_list]
 
@@ -288,38 +300,74 @@ async def verify_customer_identity(image: UploadFile = File(...), customer_id: i
         distance = cosine(uploaded_embedding, stored_embedding)
         is_match = bool(distance < DISTANCE_THRESHOLD)
 
-        # --- Step 6: Log the Verification Attempt ---
-        try:
-            customer_info_res = supabase.table("Customer").select("Name, SurName").eq("National_ID", customer_id).single().execute()
-            log_payload = {
-                "Customer_National_ID": customer_id,
-                "Result": is_match,
-                "Name": customer_info_res.data.get("Name") if customer_info_res.data else "Unknown",
-                "SurName": customer_info_res.data.get("SurName") if customer_info_res.data else "Customer"
-            }
-            supabase.table("CustomerLogs").insert(log_payload).execute()
-        except Exception as log_e:
-            # If logging fails, print the error but don't stop the main process
-            print(f"CRITICAL: Failed to log customer verification attempt: {log_e}")
-        # --- End of Logging Block ---
+        details["verified"] = is_match
+        details["message"] = "Verified Successfully" if is_match else "Verification Failed: Faces do not match."
+        details["distance"] = float(distance)
+        details["image_url"] = match_image_url
 
-        # Step 7: Return the Final Result
+        # Step 6: Return the Final Result (before logging and email in finally)
         return {
             "verified": is_match,
-            "message": "Verified Successfully" if is_match else "Verification Failed: Faces do not match.",
-            "distance": float(distance),
-            "image_url": match_image_url
+            "message": details["message"],
+            "distance": details["distance"],
+            "image_url": details["image_url"]
         }
 
-    except HTTPException:
-        raise
+    except HTTPException as e:
+        # Re-raise known HTTP errors directly, but capture their details for logging/email
+        details["status"] = "failure"
+        details["message"] = e.detail # Capture the detail of HTTPException
+        details["verified"] = False # Ensure verified is False on exception
+        raise # Re-raise the exception to send the appropriate HTTP status code
     except Exception as e:
+        # Catch any other unexpected errors and report them
+        details["status"] = "failure"
+        details["message"] = f"An unexpected server error occurred during face verification: {e}"
+        details["detail"] = str(e)
+        details["verified"] = False # Ensure verified is False on exception
         print(f"An unexpected server error occurred: {e}")
-        raise HTTPException(status_code=500, detail=f"Specific Backend Error: {str(e)}")
-        
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=details["message"])
+            
     finally:
+        # This block always runs, whether successful or an exception occurred.
+        # Log authentication attempt and send email in the background.
+        attempt_status = "success" if is_match else "failure" # is_match reflects the outcome before any exceptions
+
+        # Fetch customer email for the report (needed for email_utils)
+        customer_email = None
+        customer_name = "Customer"
+        try:
+            customer_response = supabase.table("Customer").select("Name, SurName, Email").eq("National_ID", customer_id).single().execute()
+            if customer_response.data:
+                customer_data = customer_response.data
+                customer_email = customer_data.get('Email')
+                customer_name = f"{customer_data.get('Name', '')} {customer_data.get('SurName', '')}".strip() or "Customer"
+        except Exception as e:
+            print(f"Warning: Could not fetch customer email for ID {customer_id}: {e}")
+            
+        # Log to the new AuthenticationAttempts table
+        log_payload = {
+            "customer_id": customer_id,
+            "biometric_type": "face",
+            "status": attempt_status,
+            "details": details # Store the captured details
+        }
+        try:
+            supabase.table("AuthenticationAttempts").insert([log_payload]).execute()
+            print(f"Logged face authentication attempt for {customer_id}: {attempt_status}")
+        except Exception as e:
+            print(f"ERROR: Failed to log authentication attempt to Supabase: {e}")
+            traceback.print_exc()
+
+        # Send email in background if email is available
+        if customer_email:
+            background_tasks.add_task(send_authentication_report_email, customer_email, customer_name, "face", is_match, details)
+
+        # Clean up the uploaded image file
         if os.path.exists(image_path):
             os.remove(image_path)
+
 
 # In Main.py
 
