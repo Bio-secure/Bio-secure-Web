@@ -238,7 +238,7 @@ export default defineComponent({
 
             <div class="ml-auto bg-gray-100 rounded-lg p-4 text-center">
               <p class="text-sm text-gray-500 font-semibold">Account Balance</p>
-              <p class="text-2xl font-bold text-gray-800">{{ formattedBalance }}</p>
+              <p class="text-2xl font-bold text-gray-800">{{ formattedBalance }} ฿</p>
             </div>
           </div>
 
