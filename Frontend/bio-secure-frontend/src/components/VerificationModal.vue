@@ -24,18 +24,33 @@ const irisPreview = ref(null);
 const isLoading = ref(false);
 const errorMessage = ref('');
 
+// Define the URL for the Main Backend API (iris_model_api.js is now called internally by Main.py)
+const MAIN_BACKEND_URL = "http://localhost:8000";
+
+/**
+ * Triggers the hidden file input for face image selection.
+ */
 function triggerFaceUpload() {
   document.getElementById("modalFaceFileInput").click();
 }
 
+/**
+ * Triggers the hidden file input for iris image selection.
+ */
 function triggerIrisUpload() {
   document.getElementById("modalIrisFileInput").click();
 }
 
+/**
+ * Handles the file change event for both face and iris inputs.
+ * Updates the selected file and creates a URL for image preview.
+ * @param {Event} event The change event from the file input.
+ * @param {string} type The type of biometric ('face' or 'iris').
+ */
 function handleFileChange(event, type) {
   const file = event.target.files[0];
   if (!file) return;
-  errorMessage.value = '';
+  errorMessage.value = ''; // Clear any previous error messages
 
   if (type === 'face') {
     selectedFaceFile.value = file;
@@ -46,127 +61,70 @@ function handleFileChange(event, type) {
   }
 }
 
-// Convert a file object to a Base64 encoded string
-function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      if (reader.result) {
-        // Extract just the base64 string without the "data:image/jpeg;base64," prefix
-        resolve(reader.result.split(',')[1]); 
-      } else {
-        reject(new Error("Failed to read file as Data URL."));
-      }
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
+/**
+ * Computed property to determine if the "Verify Identity" button should be disabled.
+ * It considers loading state, and whether required files (face and optionally iris) are selected.
+ */
 const isVerifyDisabled = computed(() => {
-  if (isLoading.value) return true;
-  if (!selectedFaceFile.value) return true;
-  if (props.verificationMode === 'full' && !selectedIrisFile.value) {
-    return true;
+  if (isLoading.value) return true; // Disable if an operation is already in progress
+
+  // If verificationMode is 'face', only face scan is required
+  if (props.verificationMode === 'face') {
+    return !selectedFaceFile.value;
+  } 
+  // If verificationMode is 'full', both face and iris files are required
+  else if (props.verificationMode === 'full') {
+    return !selectedFaceFile.value || !selectedIrisFile.value;
   }
-  return false;
+  return true; // Should not happen, but default to disabled
 });
 
+/**
+ * Initiates the identity verification process by sending all relevant files
+ * to the Main backend's combined /verify endpoint.
+ */
 async function verifyIdentity() {
   isLoading.value = true;
   errorMessage.value = ''; // Clear previous errors
 
-  let faceVerificationSuccess = false;
-  let irisVerificationSuccess = false; 
-  let combinedMessage = "";
+  const formData = new FormData();
+  formData.append("customer_id", props.customerId);
 
-  // --- Step 1: Perform Face Verification ---
-  if (!selectedFaceFile.value) {
-    errorMessage.value = "Please provide a face scan.";
-    isLoading.value = false;
-    emit('verification-fail', errorMessage.value);
-    return;
+  // Append face image if selected
+  if (selectedFaceFile.value) {
+    formData.append("face_image", selectedFaceFile.value);
   }
 
-  const faceFormData = new FormData();
-  faceFormData.append("image", selectedFaceFile.value);
-  faceFormData.append("customer_id", props.customerId);
+  // Append iris image if in 'full' mode and selected
+  if (props.verificationMode === 'full' && selectedIrisFile.value) {
+    formData.append("iris_image", selectedIrisFile.value);
+  }
 
   try {
-
-    // Call the Main backend for face verification
-    const faceRes = await fetch(`http://localhost:8000/verify`, {
+    const res = await fetch(`${MAIN_BACKEND_URL}/verify`, {
       method: "POST",
-      body: faceFormData
+      body: formData
     });
-    const faceData = await faceRes.json();
+    const data = await res.json();
 
-    faceVerificationSuccess = faceRes.ok && faceData.verified;
-    if (!faceVerificationSuccess) {
-      // If face verification fails, throw an error to stop here
-      throw new Error(faceData.message || "Face verification failed.");
+    // The 'verified' property from Main.py now represents the overall success
+    const overallSuccess = data.verified;
+    const responseMessage = data.message;
+
+    if (overallSuccess) {
+      emit('verification-success');
+    } else {
+      errorMessage.value = responseMessage || "Verification failed due to unknown reasons.";
+      emit('verification-fail', errorMessage.value);
     }
+
   } catch (err) {
-    errorMessage.value = `Face verification failed: ${err.message}`;
-    isLoading.value = false;
+    console.error("Network or unexpected error during verification:", err);
+    errorMessage.value = `Verification request failed: ${err.message}`;
     emit('verification-fail', errorMessage.value);
-    return; // Exit if face verification fails
+  } finally {
+    isLoading.value = false;
   }
-
-  // --- Step 2: Perform Iris Verification (if verificationMode is 'full') ---
-  if (props.verificationMode === 'full') {
-    if (!selectedIrisFile.value) {
-      errorMessage.value = "Please provide an iris scan for full verification.";
-      isLoading.value = false;
-      emit('verification-fail', errorMessage.value);
-      return;
-    }
-
-    try {
-      // Convert iris file to Base64 for the Iris Model API
-      const base64IrisData = await fileToBase64(selectedIrisFile.value);
-      const irisRequestBody = {
-        user_id: props.customerId.toString(), // Ensure user_id is a string, as expected by the backend Pydantic model
-        image_data: base64IrisData
-      };
-
-      // Call the dedicated Iris Model API for iris authentication
-      const irisRes = await fetch(`http://localhost:8081/authenticate-iris`, {
-        method: "POST",
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(irisRequestBody)
-      });
-      const irisData = await irisRes.json();
-
-      irisVerificationSuccess = irisRes.ok && irisData.is_authenticated;
-      if (!irisVerificationSuccess) {
-        // If iris authentication fails, throw an error
-        throw new Error(irisData.message || "Iris authentication failed.");
-      }
-    } catch (err) {
-      errorMessage.value = `Iris authentication failed: ${err.message}`;
-      isLoading.value = false;
-      emit('verification-fail', errorMessage.value);
-      return; // Exit if iris authentication fails
-    }
-  } else {
-    irisVerificationSuccess = true;
-  }
-
-  // --- Step 3: Conclude based on combined results ---
-  const overallSuccess = faceVerificationSuccess && irisVerificationSuccess;
-
-  if (overallSuccess) {
-    combinedMessage = "Identity Verified Successfully!";
-    emit('verification-success');
-  } else {
-    combinedMessage = errorMessage.value || "Verification failed due to unknown reasons.";
-    emit('verification-fail', combinedMessage);
-  }
-
-  isLoading.value = false;
 }
 </script>
 

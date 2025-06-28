@@ -12,6 +12,7 @@ import cv2 # Added for image processing (OpenCV)
 import base64 # Added for image decoding
 from PIL import Image # Added for image decoding
 import io # Added for image decoding
+import requests
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Form, UploadFile, File, HTTPException, BackgroundTasks, Body # Added Body for JSON requests
@@ -27,7 +28,7 @@ import httpx
 
 from postgrest.exceptions import APIError as PostgrestAPIError
 from utils.email_utils import send_authentication_report_email
-
+from iris_model_apis import authenticate_iris
 
 # Define Pydantic models
 class EmployeeCreate(BaseModel):
@@ -57,6 +58,8 @@ class IrisAuthResponse(BaseModel):
 # Authentication threshold (cosine similarity for iris)
 AUTHENTICATION_THRESHOLD = 0.30 # Adjust this value based on your desired security level
 
+FACE_DISTANCE_THRESHOLD = 0.50
+IRIS_AUTHENTICATION_THRESHOLD = 0.65
 
 # Password hashing context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -71,6 +74,7 @@ load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+IRIS_MODEL_API_URL = os.getenv("IRIS_MODEL_API_URL", "http://localhost:8081")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("Supabase URL and Key must be set in .env file or environment variables.")
@@ -104,6 +108,30 @@ app.mount("/assets", StaticFiles(directory=ASSET_FOLDER), name="asset")
 
 DISTANCE_THRESHOLD = 0.50
 BIOMETRIC_BUCKET = os.getenv("BIOMETRIC_BUCKET")
+
+async def authenticate_iris_from_api(user_id: str, image_data_b64: str) -> dict:
+    # This is a client function residing in Main.py to call the Iris Model API.
+    headers = {"Content-Type": "application/json"}
+    payload = {
+        "user_id": user_id,
+        "image_data": image_data_b64
+    }
+    try:
+        response = requests.post(f"{IRIS_MODEL_API_URL}/authenticate-iris", headers=headers, json=payload)
+        response.raise_for_status() # Raise an exception for HTTP errors (4xx or 5xx)
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error calling Iris Model API's /authenticate-iris: {e}")
+        # Attempt to get error detail from response if available
+        if response is not None and response.text:
+            try:
+                error_detail = response.json().get("detail", response.text)
+            except json.JSONDecodeError:
+                error_detail = response.text
+            raise HTTPException(status_code=response.status_code, detail=f"Iris API error: {error_detail}")
+        else:
+            raise HTTPException(status_code=500, detail=f"Failed to communicate with Iris API: {e}")
+
 
 @app.get("/")
 def root():
@@ -245,129 +273,193 @@ def get_all_customers():
     except Exception as e:
         raise HTTPException(status_code=500, detail="Could not fetch customer list.")
 
-# In Main.py
-
-# In Main.py
 
 @app.post("/verify")
 async def verify_customer_identity(
-    background_tasks: BackgroundTasks, # Inject BackgroundTasks
-    image: UploadFile = File(...),
+    background_tasks: BackgroundTasks,
+    face_image: UploadFile = File(None), # Made optional
+    iris_image: UploadFile = File(None), # Added optional iris image
     customer_id: int = Form(...)
 ):
-    image_path = os.path.join(UPLOAD_FOLDER, image.filename)
-    
-    is_match = False
-    details = {} 
-    try:
-        # Step 1: Save the Uploaded Image
-        with open(image_path, "wb") as buffer:
-            shutil.copyfileobj(image.file, buffer)
+    """
+    Verifies a customer's identity using facial recognition (if face_image is provided),
+    iris authentication (if iris_image is provided), or both.
+    Logs the attempt and sends an email report.
+    """
+    if not face_image and not iris_image:
+        raise HTTPException(status_code=400, detail="At least one of face_image or iris_image must be provided.")
 
-        # Step 2: Generate Embedding from the Image
+    face_image_path = None
+    iris_image_path = None
+
+    face_is_match = False
+    iris_is_match = False
+    
+    face_details = {}
+    iris_details = {}
+    
+    combined_details = {
+        "customer_id": customer_id,
+        "biometric_types_attempted": [],
+        "overall_status": "failure",
+        "face_verification": {},
+        "iris_authentication": {}
+    }
+
+    # --- Process Face Image (if provided) ---
+    if face_image:
+        combined_details["biometric_types_attempted"].append("face")
+        face_image_path = os.path.join(UPLOAD_FOLDER, f"{customer_id}_face_query_{uuid.uuid4()}.{face_image.filename.split('.')[-1]}")
         try:
+            with open(face_image_path, "wb") as buffer:
+                shutil.copyfileobj(face_image.file, buffer)
+
             embedding_objs = DeepFace.represent(
-                img_path=image_path, 
+                img_path=face_image_path, 
                 model_name="VGG-Face", 
                 enforce_detection=True
             )
-            uploaded_embedding = embedding_objs[0]['embedding']
+            uploaded_face_embedding = embedding_objs[0]['embedding']
+
+            db_response = supabase.table('Biometric').select('face_embedding, face_image_url').eq('National_ID', customer_id).single().execute()
+            
+            if not db_response.data or not db_response.data.get('face_embedding'):
+                face_details["message"] = "No registered face biometric data found for this customer."
+                face_is_match = False
+            else:
+                stored_face_embedding_str = db_response.data.get('face_embedding')
+                match_face_image_url = db_response.data.get('face_image_url')
+                parsed_list = json.loads(stored_face_embedding_str)
+                stored_face_embedding = [float(x) for x in parsed_list]
+
+                distance = cosine(uploaded_face_embedding, stored_face_embedding)
+                face_is_match = bool(distance < FACE_DISTANCE_THRESHOLD)
+
+                face_details["message"] = "Face Verified Successfully" if face_is_match else "Face Verification Failed"
+                face_details["distance"] = float(distance)
+                face_details["image_url"] = match_face_image_url
+            
         except ValueError as e:
-            details["message"] = f"Could not process image: No face detected. ({str(e)})"
-            details["detail"] = str(e)
-            raise HTTPException(status_code=400, detail=details["message"])
-
-        # Step 3: Fetch Stored Biometric Data from Database
-        db_response = supabase.table('Biometric').select('face_embedding, face_image_url').eq('National_ID', customer_id).single().execute()
-        
-        # Step 4: Validate the Database Response
-        if not db_response.data:
-            details["message"] = f"Biometric data not found for customer ID: {customer_id}"
-            raise HTTPException(status_code=404, detail=details["message"])
-        
-        stored_embedding_str = db_response.data.get('face_embedding')
-        match_image_url = db_response.data.get('face_image_url')
-
-        if not stored_embedding_str:
-            details["message"] = "Stored face embedding not found for this customer."
-            raise HTTPException(status_code=404, detail=details["message"])
-
-        # Correctly parse the string from the DB into a list of numbers
-        parsed_list = json.loads(stored_embedding_str)
-        stored_embedding = [float(x) for x in parsed_list]
-
-        # Step 5: Compare the Faces
-        distance = cosine(uploaded_embedding, stored_embedding)
-        is_match = bool(distance < DISTANCE_THRESHOLD)
-
-        details["verified"] = is_match
-        details["message"] = "Verified Successfully" if is_match else "Verification Failed: Faces do not match."
-        details["distance"] = float(distance)
-        details["image_url"] = match_image_url
-
-        # Step 6: Return the Final Result (before logging and email in finally)
-        return {
-            "verified": is_match,
-            "message": details["message"],
-            "distance": details["distance"],
-            "image_url": details["image_url"]
-        }
-
-    except HTTPException as e:
-        # Re-raise known HTTP errors directly, but capture their details for logging/email
-        details["status"] = "failure"
-        details["message"] = e.detail # Capture the detail of HTTPException
-        details["verified"] = False # Ensure verified is False on exception
-        raise # Re-raise the exception to send the appropriate HTTP status code
-    except Exception as e:
-        # Catch any other unexpected errors and report them
-        details["status"] = "failure"
-        details["message"] = f"An unexpected server error occurred during face verification: {e}"
-        details["detail"] = str(e)
-        details["verified"] = False # Ensure verified is False on exception
-        print(f"An unexpected server error occurred: {e}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=details["message"])
-            
-    finally:
-        # This block always runs, whether successful or an exception occurred.
-        # Log authentication attempt and send email in the background.
-        attempt_status = "success" if is_match else "failure" # is_match reflects the outcome before any exceptions
-
-        # Fetch customer email for the report (needed for email_utils)
-        customer_email = None
-        customer_name = "Customer"
-        try:
-            customer_response = supabase.table("Customer").select("Name, SurName, Email").eq("National_ID", customer_id).single().execute()
-            if customer_response.data:
-                customer_data = customer_response.data
-                customer_email = customer_data.get('Email')
-                customer_name = f"{customer_data.get('Name', '')} {customer_data.get('SurName', '')}".strip() or "Customer"
+            face_details["message"] = f"Face processing error: No face detected or image issue. ({str(e)})"
+            face_is_match = False
         except Exception as e:
-            print(f"Warning: Could not fetch customer email for ID {customer_id}: {e}")
-            
-        # Log to the new AuthenticationAttempts table
-        log_payload = {
-            "customer_id": customer_id,
-            "biometric_type": "face",
-            "status": attempt_status,
-            "details": details # Store the captured details
-        }
-        try:
-            supabase.table("AuthenticationAttempts").insert([log_payload]).execute()
-            print(f"Logged face authentication attempt for {customer_id}: {attempt_status}")
-        except Exception as e:
-            print(f"ERROR: Failed to log authentication attempt to Supabase: {e}")
+            face_details["message"] = f"Unexpected face verification error: {e}"
+            face_details["detail"] = str(e)
+            face_is_match = False
+            print(f"Face verification error: {e}")
             traceback.print_exc()
+        finally:
+            face_details["status"] = "success" if face_is_match else "failure"
+            combined_details["face_verification"] = face_details
+            if face_image_path and os.path.exists(face_image_path):
+                os.remove(face_image_path)
 
-        # Send email in background if email is available
-        if customer_email:
-            background_tasks.add_task(send_authentication_report_email, customer_email, customer_name, "face", is_match, details)
+    # --- Process Iris Image (if provided) ---
+    if iris_image:
+        combined_details["biometric_types_attempted"].append("iris")
+        iris_image_path = os.path.join(UPLOAD_FOLDER, f"{customer_id}_iris_query_{uuid.uuid4()}.{iris_image.filename.split('.')[-1]}")
+        try:
+            with open(iris_image_path, "wb") as buffer:
+                shutil.copyfileobj(iris_image.file, buffer)
+            
+            with open(iris_image_path, "rb") as f:
+                iris_image_bytes = f.read()
+            iris_image_b64 = base64.b64encode(iris_image_bytes).decode('utf-8')
+            
+            # This is the line that calls the helper function defined in this very file
+            iris_auth_response = await authenticate_iris_from_api(str(customer_id), iris_image_b64) 
+            
+            iris_is_match = iris_auth_response.get("is_authenticated", False)
+            iris_details["message"] = "Iris Authenticated Successfully" if iris_is_match else "Iris Authentication Failed"
+            iris_details["similarity"] = iris_auth_response.get("similarity") or iris_auth_response.get("best_similarity")
+            iris_details["matched_user_id"] = iris_auth_response.get("matched_user_id")
+            iris_details["detail"] = iris_auth_response.get("detail")
+            
+        except HTTPException as e: # Catch HTTP errors from iris API call
+            iris_details["message"] = f"Iris API error: {e.detail}"
+            iris_details["detail"] = str(e.detail)
+            iris_is_match = False
+        except Exception as e:
+            iris_details["message"] = f"Unexpected iris authentication error: {e}"
+            iris_details["detail"] = str(e)
+            iris_is_match = False
+            print(f"Iris authentication error: {e}")
+            traceback.print_exc()
+        finally:
+            iris_details["status"] = "success" if iris_is_match else "failure"
+            combined_details["iris_authentication"] = iris_details
+            if iris_image_path and os.path.exists(iris_image_path):
+                os.remove(iris_image_path)
 
-        # Clean up the uploaded image file
-        if os.path.exists(image_path):
-            os.remove(image_path)
+    # --- Determine Overall Result and Construct Response ---
+    overall_verified = False
+    response_message = "Verification Result:"
+    
+    if face_image and iris_image:
+        overall_verified = face_is_match and iris_is_match
+        response_message += f" Face: {face_details.get('message', 'N/A')}. Iris: {iris_details.get('message', 'N/A')}."
+        combined_details["overall_status"] = "success" if overall_verified else "failure"
+        combined_details["message"] = response_message
+    elif face_image:
+        overall_verified = face_is_match
+        response_message += f" Face: {face_details.get('message', 'N/A')}."
+        combined_details["overall_status"] = "success" if overall_verified else "failure"
+        combined_details["message"] = response_message
+    elif iris_image:
+        overall_verified = iris_is_match
+        response_message += f" Iris: {iris_details.get('message', 'N/A')}."
+        combined_details["overall_status"] = "success" if overall_verified else "failure"
+        combined_details["message"] = response_message
 
+    # Final response to frontend
+    return_payload = {
+        "verified": overall_verified,
+        "message": response_message,
+        "face_distance": face_details.get("distance"),
+        "face_image_url": face_details.get("image_url"),
+        "iris_similarity": iris_details.get("similarity"),
+        "iris_matched_user_id": iris_details.get("matched_user_id"),
+        "biometric_types_attempted": combined_details["biometric_types_attempted"]
+    }
+
+    # --- Log and Email (in finally block for consistency and cleanup) ---
+    # Prepare details for logging and email based on the combined process
+    final_log_details = {
+        "face_verification": combined_details["face_verification"],
+        "iris_authentication": combined_details["iris_authentication"],
+        "overall_message": response_message,
+        "overall_verified": overall_verified,
+        "types_attempted": combined_details["biometric_types_attempted"]
+    }
+    
+    customer_email = None
+    customer_name = "Customer"
+    try:
+        customer_response = supabase.table("Customer").select("Name, SurName, Email").eq("National_ID", customer_id).single().execute()
+        if customer_response.data:
+            customer_data = customer_response.data
+            customer_email = customer_data.get('Email')
+            customer_name = f"{customer_data.get('Name', '')} {customer_data.get('SurName', '')}".strip() or "Customer"
+    except Exception as e:
+        print(f"Warning: Could not fetch customer email for ID {customer_id}: {e}")
+        
+    log_payload = {
+        "customer_id": customer_id,
+        "biometric_type": "combined" if len(combined_details["biometric_types_attempted"]) > 1 else combined_details["biometric_types_attempted"][0],
+        "status": "success" if overall_verified else "failure",
+        "details": final_log_details
+    }
+    try:
+        supabase.table("AuthenticationAttempts").insert([log_payload]).execute()
+        print(f"Logged {'combined' if len(combined_details['biometric_types_attempted']) > 1 else combined_details['biometric_types_attempted'][0]} authentication attempt for {customer_id}: {log_payload['status']}")
+    except Exception as e:
+        print(f"ERROR: Failed to log authentication attempt to Supabase: {e}")
+        traceback.print_exc()
+
+    if customer_email:
+        background_tasks.add_task(send_authentication_report_email, customer_email, customer_name, log_payload["biometric_type"], overall_verified, final_log_details)
+    
+    return return_payload
 
 # In Main.py
 

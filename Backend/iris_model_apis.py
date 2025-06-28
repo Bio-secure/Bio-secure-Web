@@ -21,13 +21,15 @@ import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Body
+from fastapi import FastAPI, HTTPException, Body, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field # Import Field here, as it might be used in BaseModel
 from scipy.spatial.distance import cosine # Needed for authentication comparison
 
 from supabase import create_client, Client # New imports for Supabase client
 from typing import Literal, Optional # Needed for Pydantic models
+
+
 
 # --- Load environment variables for Supabase (for this service) ---
 load_dotenv()
