@@ -134,9 +134,15 @@ def mock_send_email():
 
 @pytest.fixture
 def mock_iris_authenticator(monkeypatch):
-    mock_func = MagicMock()
-    monkeypatch.setattr("Main.authenticate_iris_from_api", mock_func)
-    return mock_func
+    mock = AsyncMock()
+    mock.return_value = {
+        "is_authenticated": True,
+        "similarity": 0.95,
+        "matched_user_id": "789",
+        "detail": "Iris match found with high confidence"
+    }
+    monkeypatch.setattr("Main.authenticate_iris_from_api", mock)
+    return mock
 
 
 @pytest.mark.asyncio
@@ -188,3 +194,70 @@ async def test_verify_customer_identity_iris_success_only(
 
     assert response.status_code == 200
     assert response.json()["verified"] is True
+
+
+@pytest.fixture
+def mock_face_authenticator(monkeypatch):
+    mock = AsyncMock()
+    mock.return_value = AsyncMock(resturn_value= {
+        "is_authenticated": True,
+        "similarity": 0.93,
+        "matched_user_id": "789",
+        "detail": "Face match found with high confidence"
+    })
+    monkeypatch.setattr("Main.authenticate_face_from_api", mock)
+    return mock
+
+@pytest.mark.asyncio
+async def test_verify_customer_identity_iris_face_success(
+    client,
+    mock_supabase_client,
+    mock_send_email,
+    mock_iris_authenticator,
+    mock_face_authenticator,
+):
+    customer_id = 789
+    test_iris_image_bytes = b"fake iris image"
+    test_face_image_bytes = b"fake face image"
+
+    # Mock Supabase customer data retrieval
+    mock_supabase_client.customer_execute.side_effect = lambda: MagicMock(
+        data={"Name": "IrisFace", "SurName": "User", "Email": "irisface@example.com"}
+    )
+    mock_supabase_client.auth_insert_execute.side_effect = lambda: MagicMock(data=[{"id": 3}])
+
+    # Mock the iris API response as successful
+    mock_iris_authenticator.return_value = {
+        "is_authenticated": True,
+        "similarity": 0.95,
+        "matched_user_id": str(customer_id),
+        "detail": "Iris match found with high confidence"
+    }
+
+    # Mock the face API response as successful
+    mock_face_authenticator.return_value = {
+        "is_authenticated": True,
+        "similarity": 0.93,
+        "matched_user_id": str(customer_id),
+        "detail": "Face match found with high confidence"
+    }
+
+    files = {
+        "iris_image": ("iris.jpg", io.BytesIO(test_iris_image_bytes), "image/jpeg"),
+        "face_image": ("face.jpg", io.BytesIO(test_face_image_bytes), "image/jpeg"),
+    }
+    data = {
+        "customer_id": str(customer_id)
+    }
+
+    response = client.post("/verify", files=files, data=data)
+
+    assert response.status_code == 200
+    response_json = response.json()
+
+    # Expect verification success when both iris and face match
+    assert response_json["verified"] is True
+    assert "iris" in response_json["details"]
+    assert "face" in response_json["details"]
+    assert response_json["details"]["iris"]["is_authenticated"] is True
+    assert response_json["details"]["face"]["is_authenticated"] is True

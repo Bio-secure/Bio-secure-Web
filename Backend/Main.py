@@ -273,6 +273,46 @@ def get_all_customers():
     except Exception as e:
         raise HTTPException(status_code=500, detail="Could not fetch customer list.")
 
+# For only face authentication
+async def authenticate_face_from_api(customer_id: int, face_image_path: str):
+    try:
+        embedding_objs = DeepFace.represent(
+            img_path=face_image_path,
+            model_name="VGG-Face",
+            enforce_detection=True
+        )
+        uploaded_face_embedding = embedding_objs[0]['embedding']
+
+        db_response = supabase.table('Biometric').select('face_embedding, face_image_url').eq('National_ID', customer_id).single().execute()
+
+        if not db_response.data or not db_response.data.get('face_embedding'):
+            return {
+                "is_authenticated": False,
+                "message": "No registered face biometric data found for this customer."
+            }
+
+        stored_face_embedding_str = db_response.data.get('face_embedding')
+        match_face_image_url = db_response.data.get('face_image_url')
+        parsed_list = json.loads(stored_face_embedding_str)
+        stored_face_embedding = [float(x) for x in parsed_list]
+
+        distance = cosine(uploaded_face_embedding, stored_face_embedding)
+        is_match = bool(distance < FACE_DISTANCE_THRESHOLD)
+
+        return {
+            "is_authenticated": is_match,
+            "distance": float(distance) if distance is not None else None,
+            "image_url": match_face_image_url,
+            "message": "Face Verified Successfully" if is_match else "Face Verification Failed"
+        }
+
+    except Exception as e:
+        return {
+            "is_authenticated": False,
+            "message": f"Face verification error: {e}",
+            "detail": str(e)
+        }
+
 
 @app.post("/verify")
 async def verify_customer_identity(
@@ -314,34 +354,14 @@ async def verify_customer_identity(
             with open(face_image_path, "wb") as buffer:
                 shutil.copyfileobj(face_image.file, buffer)
 
-            embedding_objs = DeepFace.represent(
-                img_path=face_image_path, 
-                model_name="VGG-Face", 
-                enforce_detection=True
-            )
-            uploaded_face_embedding = embedding_objs[0]['embedding']
+            face_auth_response = await authenticate_face_from_api(customer_id, face_image_path)
+            face_is_match = face_auth_response.get("is_authenticated", False)
 
-            db_response = supabase.table('Biometric').select('face_embedding, face_image_url').eq('National_ID', customer_id).single().execute()
-            
-            if not db_response.data or not db_response.data.get('face_embedding'):
-                face_details["message"] = "No registered face biometric data found for this customer."
-                face_is_match = False
-            else:
-                stored_face_embedding_str = db_response.data.get('face_embedding')
-                match_face_image_url = db_response.data.get('face_image_url')
-                parsed_list = json.loads(stored_face_embedding_str)
-                stored_face_embedding = [float(x) for x in parsed_list]
+            face_details["message"] = face_auth_response.get("message")
+            face_details["distance"] = face_auth_response.get("distance")
+            face_details["image_url"] = face_auth_response.get("image_url")
+            face_details["detail"] = face_auth_response.get("detail")
 
-                distance = cosine(uploaded_face_embedding, stored_face_embedding)
-                face_is_match = bool(distance < FACE_DISTANCE_THRESHOLD)
-
-                face_details["message"] = "Face Verified Successfully" if face_is_match else "Face Verification Failed"
-                face_details["distance"] = float(distance)
-                face_details["image_url"] = match_face_image_url
-            
-        except ValueError as e:
-            face_details["message"] = f"Face processing error: No face detected or image issue. ({str(e)})"
-            face_is_match = False
         except Exception as e:
             face_details["message"] = f"Unexpected face verification error: {e}"
             face_details["detail"] = str(e)
@@ -350,10 +370,10 @@ async def verify_customer_identity(
             traceback.print_exc()
         finally:
             face_details["status"] = "success" if face_is_match else "failure"
+            face_details["is_authenticated"] = face_is_match 
             combined_details["face_verification"] = face_details
             if face_image_path and os.path.exists(face_image_path):
                 os.remove(face_image_path)
-
     # --- Process Iris Image (if provided) ---
     if iris_image:
         combined_details["biometric_types_attempted"].append("iris")
@@ -387,6 +407,7 @@ async def verify_customer_identity(
             traceback.print_exc()
         finally:
             iris_details["status"] = "success" if iris_is_match else "failure"
+            iris_details["is_authenticated"] = iris_is_match  
             combined_details["iris_authentication"] = iris_details
             if iris_image_path and os.path.exists(iris_image_path):
                 os.remove(iris_image_path)
@@ -419,7 +440,11 @@ async def verify_customer_identity(
         "face_image_url": face_details.get("image_url"),
         "iris_similarity": iris_details.get("similarity"),
         "iris_matched_user_id": iris_details.get("matched_user_id"),
-        "biometric_types_attempted": combined_details["biometric_types_attempted"]
+        "biometric_types_attempted": combined_details["biometric_types_attempted"],
+        "details": {
+            "face": face_details,
+            "iris": iris_details
+        }
     }
 
     # --- Log and Email (in finally block for consistency and cleanup) ---
