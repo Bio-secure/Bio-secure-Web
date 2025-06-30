@@ -327,11 +327,6 @@ async def get_iris_embedding(request: IrisImageRequest):
 
 @app.post("/authenticate-iris", response_model=IrisAuthResponse)
 async def authenticate_iris(request: IrisAuthentication):
-    """
-    Authenticates or identifies a user based on an iris image.
-    Supports both closed-set verification (with user_id) and open-set identification (without user_id).
-    Optionally, for debugging, allows specifying a local reference filename in 'uploads'.
-    """
     # Models are checked on startup, but a quick check here for safety
     if not (unet_model and effnet_backbone and arcface_head):
         raise HTTPException(status_code=503, detail="Iris authentication models are not fully loaded on the server.")

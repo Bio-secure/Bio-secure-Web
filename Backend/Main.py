@@ -116,6 +116,7 @@ async def authenticate_iris_from_api(user_id: str, image_data_b64: str) -> dict:
         "user_id": user_id,
         "image_data": image_data_b64
     }
+    response = None
     try:
         response = requests.post(f"{IRIS_MODEL_API_URL}/authenticate-iris", headers=headers, json=payload)
         response.raise_for_status() # Raise an exception for HTTP errors (4xx or 5xx)
@@ -131,7 +132,6 @@ async def authenticate_iris_from_api(user_id: str, image_data_b64: str) -> dict:
             raise HTTPException(status_code=response.status_code, detail=f"Iris API error: {error_detail}")
         else:
             raise HTTPException(status_code=500, detail=f"Failed to communicate with Iris API: {e}")
-
 
 @app.get("/")
 def root():
@@ -460,8 +460,6 @@ async def verify_customer_identity(
         background_tasks.add_task(send_authentication_report_email, customer_email, customer_name, log_payload["biometric_type"], overall_verified, final_log_details)
     
     return return_payload
-
-# In Main.py
 
 @app.get("/customer-details/{customer_id}")
 async def get_customer_details(customer_id: int):
