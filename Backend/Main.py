@@ -564,10 +564,10 @@ async def register_employee(employee_data: EmployeeCreate):
 # In Main.py
 @app.post("/login-employee")
 async def login_employee(employee_login_data: EmployeeLogin):
+    print(employee_login_data)
     employee = None  # Define employee outside the try block
     try:
         response = supabase.table("Employees").select("EmID, EmPass, IsAdmin, EmName, EmSurName").eq("EmID", employee_login_data.emId).single().execute()
-        
         log_payload = {
             "Employee_ID": employee_login_data.emId,
             "EmResult": "Failure", # Default to failure
@@ -703,9 +703,6 @@ async def get_customer_logs():
 
 @app.get("/employee-logs")
 async def get_employee_logs():
-    """
-    Fetches a list of the 10 most recent successful employee logins.
-    """
     try:
         response = supabase.table("EmployeeLogs") \
             .select("*") \

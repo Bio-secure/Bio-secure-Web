@@ -42,7 +42,7 @@ export default defineComponent({
 
       <!-- Identify -->
       <div class="p-10 flex flex-col items-center">
-        <img src="../assets/Identify.png" alt="Identify" class="w-60 h-60 mb-8" />
+        <img src="../assets/Identify.jpg" alt="Identify" class="w-60 h-60 mb-8 rounded-2xl border-mainblue border-3" />
         <RouterLink to="/identify">
           <button class="mt-6 bg-blue-300 text-black font-bold text-2xl px-8 py-4 rounded-2xl shadow-md hover:bg-blue-400">
             Transaction

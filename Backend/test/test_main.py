@@ -7,6 +7,9 @@ import io
 from unittest.mock import AsyncMock
 from fastapi import status
 from postgrest.exceptions import APIError as PostgrestAPIError
+from unittest.mock import MagicMock
+from collections import namedtuple
+import bcrypt
 
 # --- Global Patching ---
 supabase_create_client_func_patcher = patch('Main.create_client')
@@ -93,8 +96,23 @@ def mock_supabase_client(monkeypatch):
             chain = MagicMock()
             chain.insert.return_value.execute = create_execute_mock([{"id": 1}])
             return chain
+        elif table_name == "Employee":
+            chain = MagicMock()
+            chain.select.return_value.eq.return_value.single.return_value.execute.return_value = {
+                "data": {
+                    "emId": "user1",
+                    "password": "correctpassword",  # hashed or plain depending on your logic
+                    "isAdmin": True,
+                    "Name": "Pond",
+                    "SurName": "GG",
+                    "employeeId": 1001
+                },
+                "error": None
+            }
+            return chain
 
         return MagicMock()
+        
 
     mock.table.side_effect = table_side_effect
     monkeypatch.setattr("Main.supabase", mock)
@@ -385,3 +403,10 @@ async def test_verify_customer_identity_one_invalid_biometric(
     resp_json = response.json()
     assert resp_json["verified"] is False
     assert resp_json["biometric_types_attempted"] == ["face", "iris"]
+
+# Employee Login Flow 
+
+@pytest.mark.asyncio
+async def test_employee_login_missing_fields(client):
+    response = client.post("/login-employee", json={})
+    assert response.status_code == 422
