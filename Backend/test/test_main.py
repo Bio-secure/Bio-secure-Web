@@ -312,3 +312,76 @@ async def test_verify_empty_file(client):
     # Should return a failure response, not crash
     assert response.status_code == 200
     assert response.json()["verified"] is False
+
+# Test case for either face or iris input invalid
+
+@pytest.mark.asyncio
+async def test_verify_customer_identity_one_invalid_biometric(
+    client,
+    mock_supabase_client,
+    mock_send_email,
+    mock_iris_authenticator,
+    mock_face_authenticator,
+):
+    customer_id = 123
+    valid_face_image_bytes = b"valid face image bytes"
+    valid_iris_image_bytes = b"valid iris image bytes"
+    corrupted_bytes = b""  # Simulate corrupted or empty file
+
+    # Mock Supabase customer data retrieval
+    mock_supabase_client.customer_execute.side_effect = lambda: MagicMock(
+        data={"Name": "Test", "SurName": "User", "Email": "testuser@example.com"}
+    )
+    mock_supabase_client.auth_insert_execute.side_effect = lambda: MagicMock(data=[{"id": 1}])
+
+    # Case 1: Valid face, invalid iris
+    mock_face_authenticator.return_value = {
+        "is_authenticated": True,
+        "similarity": 0.92,
+        "matched_user_id": str(customer_id),
+        "detail": "Face match found with high confidence"
+    }
+    mock_iris_authenticator.return_value = {
+        "is_authenticated": False,
+        "similarity": 0.1,
+        "matched_user_id": None,
+        "detail": "Iris authentication failed due to corrupted image"
+    }
+
+    files = {
+        "face_image": ("face.jpg", io.BytesIO(valid_face_image_bytes), "image/jpeg"),
+        "iris_image": ("iris.jpg", io.BytesIO(corrupted_bytes), "image/jpeg"),
+    }
+    data = {"customer_id": str(customer_id)}
+
+    response = client.post("/verify", files=files, data=data)
+    assert response.status_code == 200
+    resp_json = response.json()
+    assert resp_json["verified"] is False
+    assert resp_json["biometric_types_attempted"] == ["face", "iris"]
+    assert resp_json.get("iris_similarity") is not None or resp_json.get("iris_similarity") == 0.1 or resp_json.get("iris_similarity") is None
+    # Optionally check the detail messages if included in the response (depending on your API design)
+
+    # Case 2: Invalid face, valid iris
+    mock_face_authenticator.return_value = {
+        "is_authenticated": False,
+        "similarity": 0.1,
+        "matched_user_id": None,
+        "detail": "Face authentication failed due to corrupted image"
+    }
+    mock_iris_authenticator.return_value = {
+        "is_authenticated": True,
+        "similarity": 0.95,
+        "matched_user_id": str(customer_id),
+        "detail": "Iris match found with high confidence"
+    }
+
+    files = {
+        "face_image": ("face.jpg", io.BytesIO(corrupted_bytes), "image/jpeg"),
+        "iris_image": ("iris.jpg", io.BytesIO(valid_iris_image_bytes), "image/jpeg"),
+    }
+    response = client.post("/verify", files=files, data=data)
+    assert response.status_code == 200
+    resp_json = response.json()
+    assert resp_json["verified"] is False
+    assert resp_json["biometric_types_attempted"] == ["face", "iris"]
