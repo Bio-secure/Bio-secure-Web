@@ -5,7 +5,7 @@ import json
 import requests
 import io
 from unittest.mock import AsyncMock
-
+from fastapi import status
 from postgrest.exceptions import APIError as PostgrestAPIError
 
 # --- Global Patching ---
@@ -261,3 +261,54 @@ async def test_verify_customer_identity_iris_face_success(
     assert "face" in response_json["details"]
     assert response_json["details"]["iris"]["is_authenticated"] is True
     assert response_json["details"]["face"]["is_authenticated"] is True
+
+# Input Validation & Error Cases
+
+@pytest.mark.asyncio
+async def test_verify_missing_all_images(client):
+    response = client.post("/verify", data={"customer_id": "123"})
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert response.json()["detail"] == "At least one of face_image or iris_image must be provided."
+
+
+@pytest.mark.asyncio
+async def test_verify_missing_customer_id(client):
+    test_face = io.BytesIO(b"fake image data")
+    files = {"face_image": ("face.jpg", test_face, "image/jpeg")}
+
+    response = client.post("/verify", files=files)
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY  # FastAPI auto-validates required Form fields
+
+
+@pytest.mark.asyncio
+async def test_verify_invalid_customer_id_type(client):
+    test_face = io.BytesIO(b"fake image data")
+    files = {"face_image": ("face.jpg", test_face, "image/jpeg")}
+    data = {"customer_id": "not-a-number"}
+
+    response = client.post("/verify", files=files, data=data)
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+@pytest.mark.asyncio
+async def test_verify_unsupported_file_type(client):
+    fake_file = io.BytesIO(b"This is not an image")
+    files = {"face_image": ("malicious.exe", fake_file, "application/octet-stream")}
+    data = {"customer_id": "123"}
+
+    response = client.post("/verify", files=files, data=data)
+    # Still should process, as the backend currently doesn't block MIME types.
+    # If you want to enforce, you'd need to add validation.
+    assert response.status_code == 200 or response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_verify_empty_file(client):
+    empty_file = io.BytesIO(b"")
+    files = {"iris_image": ("iris.jpg", empty_file, "image/jpeg")}
+    data = {"customer_id": "123"}
+
+    response = client.post("/verify", files=files, data=data)
+    # Should return a failure response, not crash
+    assert response.status_code == 200
+    assert response.json()["verified"] is False
