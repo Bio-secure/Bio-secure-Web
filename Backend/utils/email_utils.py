@@ -2,6 +2,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import os
+import traceback
 from dotenv import load_dotenv
 import datetime
 import pytz # Import pytz for timezone awareness, especially good for timestamps
@@ -55,9 +56,9 @@ def send_authentication_report_email(
         <ul>
             <li><strong>Message:</strong> {details.get('message', 'N/A')}</li>
             {f"<li><strong>Distance:</strong> {details.get('distance', 'N/A'):.4f}</li>" if 'distance' in details else ''}
-            {f"<li><strong>Similarity:</strong> {details.get('similarity', 'N/A'):.4f}</li>" if 'similarity' in details else ''}
+            {f"<li><strong>Similarity:</strong> {details.get('face_distance', 'N/A'):.4f}</li>" if 'face_distance' in details else ''}
             {f"<li><strong>Matched User ID:</strong> {details.get('matched_user_id', 'N/A')}</li>" if 'matched_user_id' in details else ''}
-            {f"<li><strong>Best Similarity:</strong> {details.get('best_similarity', 'N/A'):.4f}</li>" if 'best_similarity' in details else ''}
+            {f"<li><strong>Similarity:</strong> {details['iris_simiarity']:.4f}</li>" if isinstance(details.get('iris_simiarity'), (float, int)) else ''}
             {f"<li><strong>Reason:</strong> {details.get('detail', 'N/A')}</li>" if 'detail' in details else ''}
         </ul>
 
