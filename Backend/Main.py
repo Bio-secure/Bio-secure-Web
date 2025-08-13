@@ -625,27 +625,51 @@ async def register_user(user_data: dict):
 @app.post("/transaction")
 async def create_transaction(transaction: TransactionCreate):
     try:
-        # Finding the customer balance in db
-        customer_response = supabase.table("Customer").select("Balance").eq("National_ID", transaction.customer_id).single().execute()
-        if not customer_response.data:
-            raise HTTPException(status_code=404, detail="Customer not found")
-        current_balance = customer_response.data.get('Balance') or 0
+        # 1. Find customer balance & info
+        customer_response = supabase.table("Customer") \
+            .select("Name", "SurName", "Balance") \
+            .eq("National_ID", transaction.customer_id) \
+            .single().execute()
         
-        # Chose transaction type
+        if not customer_response.data:
+            # Log "Access Denied" if customer not found
+            supabase.table("CustomerLogs").insert([{
+                "Customer_National_ID": transaction.customer_id,
+                "Name": "Unknown",
+                "SurName": "Unknown",
+                "Result": False,
+                "Transaction_Timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
+            }]).execute()
+            raise HTTPException(status_code=404, detail="Customer not found")
+        
+        current_balance = customer_response.data.get('Balance') or 0
+        customer_name = customer_response.data.get("Name", "")
+        customer_surname = customer_response.data.get("SurName", "")
+
+        # 2. Handle withdrawal
         if transaction.transaction_type == 'withdrawal':
             if current_balance < transaction.amount:
+                # Log failed transaction
+                supabase.table("CustomerLogs").insert([{
+                    "Customer_National_ID": transaction.customer_id,
+                    "Name": customer_name,
+                    "SurName": customer_surname,
+                    "Result": False,  # Access Denied
+                    "Transaction_Timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
+                }]).execute()
                 raise HTTPException(status_code=400, detail="Insufficient funds for withdrawal.")
             new_balance = current_balance - transaction.amount
-        else: # Deposit
+        else:  # Deposit
             new_balance = current_balance + transaction.amount
 
-        # Update the balance of the chosen customer
-        supabase.table("Customer").update({"Balance": new_balance}).eq("National_ID", transaction.customer_id).execute()
+        # 3. Update the balance
+        supabase.table("Customer").update({"Balance": new_balance}) \
+            .eq("National_ID", transaction.customer_id).execute()
 
-        # update with transaction record
+        # 4. Insert into Transactions table
         transaction_record = {
             "customer_id": transaction.customer_id,
-            "employee_id": transaction.employee_id,  # NEW
+            "employee_id": transaction.employee_id,
             "transaction_type": transaction.transaction_type,
             "amount": transaction.amount,
             "note": transaction.note,
@@ -653,10 +677,20 @@ async def create_transaction(transaction: TransactionCreate):
         }
         supabase.table("Transactions").insert(transaction_record).execute()
 
+        # 5. Insert into CustomerLogs (Access Granted)
+        supabase.table("CustomerLogs").insert([{
+            "Customer_National_ID": transaction.customer_id,
+            "Name": customer_name,
+            "SurName": customer_surname,
+            "Result": True,
+            "Transaction_Timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
+        }]).execute()
+
         return {
             "message": f"{transaction.transaction_type.capitalize()} successful!",
             "new_balance": new_balance
         }
+    
     except HTTPException:
         raise
     except Exception as e:
