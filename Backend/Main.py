@@ -454,7 +454,9 @@ async def verify_customer_identity(
         "iris_authentication": combined_details["iris_authentication"],
         "overall_message": response_message,
         "overall_verified": overall_verified,
-        "types_attempted": combined_details["biometric_types_attempted"]
+        "types_attempted": combined_details["biometric_types_attempted"],
+        "face_distance": face_details.get("distance"),
+        "iris_simiarity": iris_details.get("matched_user_id")
     }
     
     customer_email = None
@@ -472,7 +474,7 @@ async def verify_customer_identity(
         "customer_id": customer_id,
         "biometric_type": "combined" if len(combined_details["biometric_types_attempted"]) > 1 else combined_details["biometric_types_attempted"][0],
         "status": "success" if overall_verified else "failure",
-        "details": final_log_details
+        "details": json.dumps(final_log_details)  # Convert nested dict to JSON string
     }
     try:
         supabase.table("AuthenticationAttempts").insert([log_payload]).execute()
