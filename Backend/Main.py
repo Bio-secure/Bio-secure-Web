@@ -6,6 +6,7 @@ import traceback
 from typing import Literal, Optional
 import uuid
 import math # Added for ArcFace
+from rich import _console
 import scipy.ndimage # Added for Daugman normalization
 import numpy as np # Already present, but explicitly for iris processing
 import cv2 # Added for image processing (OpenCV)
@@ -317,24 +318,21 @@ async def authenticate_face_from_api(customer_id: int, face_image_path: str):
 @app.post("/verify")
 async def verify_customer_identity(
     background_tasks: BackgroundTasks,
-    face_image: UploadFile = File(None), # Made optional
-    iris_image: UploadFile = File(None), # Added optional iris image
+    face_image: UploadFile = File(None),
+    iris_image: UploadFile = File(None),
     customer_id: int = Form(...)
 ):
     """
-    Verifies a customer's identity using facial recognition (if face_image is provided),
-    iris authentication (if iris_image is provided), or both.
-    Logs the attempt and sends an email report.
+    Verifies a customer's identity using biometrics, logs the attempt to the
+    'CustomerLogs' table, and sends an email report.
     """
     if not face_image and not iris_image:
         raise HTTPException(status_code=400, detail="At least one of face_image or iris_image must be provided.")
 
     face_image_path = None
     iris_image_path = None
-
     face_is_match = False
     iris_is_match = False
-    
     face_details = {}
     iris_details = {}
     
@@ -348,66 +346,47 @@ async def verify_customer_identity(
 
     # --- Process Face Image (if provided) ---
     if face_image:
+        # (This part of your code is unchanged)
         combined_details["biometric_types_attempted"].append("face")
         face_image_path = os.path.join(UPLOAD_FOLDER, f"{customer_id}_face_query_{uuid.uuid4()}.{face_image.filename.split('.')[-1]}")
         try:
             with open(face_image_path, "wb") as buffer:
                 shutil.copyfileobj(face_image.file, buffer)
-
             face_auth_response = await authenticate_face_from_api(customer_id, face_image_path)
             face_is_match = face_auth_response.get("is_authenticated", False)
-
-            face_details["message"] = face_auth_response.get("message")
-            face_details["distance"] = face_auth_response.get("distance")
-            face_details["image_url"] = face_auth_response.get("image_url")
-            face_details["detail"] = face_auth_response.get("detail")
-
+            face_details = face_auth_response
         except Exception as e:
-            face_details["message"] = f"Unexpected face verification error: {e}"
-            face_details["detail"] = str(e)
+            face_details = {"message": f"Unexpected face verification error: {e}", "detail": str(e)}
             face_is_match = False
-            print(f"Face verification error: {e}")
             traceback.print_exc()
         finally:
             face_details["status"] = "success" if face_is_match else "failure"
-            face_details["is_authenticated"] = face_is_match 
+            face_details["is_authenticated"] = face_is_match
             combined_details["face_verification"] = face_details
             if face_image_path and os.path.exists(face_image_path):
                 os.remove(face_image_path)
+
     # --- Process Iris Image (if provided) ---
     if iris_image:
+        # (This part of your code is unchanged)
         combined_details["biometric_types_attempted"].append("iris")
         iris_image_path = os.path.join(UPLOAD_FOLDER, f"{customer_id}_iris_query_{uuid.uuid4()}.{iris_image.filename.split('.')[-1]}")
         try:
-            with open(iris_image_path, "wb") as buffer:
-                shutil.copyfileobj(iris_image.file, buffer)
-            
             with open(iris_image_path, "rb") as f:
-                iris_image_bytes = f.read()
-            iris_image_b64 = base64.b64encode(iris_image_bytes).decode('utf-8')
-            
-            # This is the line that calls the helper function defined in this very file
-            iris_auth_response = await authenticate_iris_from_api(str(customer_id), iris_image_b64) 
-            
+                iris_image_b64 = base64.b64encode(f.read()).decode('utf-8')
+            iris_auth_response = await authenticate_iris_from_api(str(customer_id), iris_image_b64)
             iris_is_match = iris_auth_response.get("is_authenticated", False)
-            iris_details["message"] = "Iris Authenticated Successfully" if iris_is_match else "Iris Authentication Failed"
-            iris_details["similarity"] = iris_auth_response.get("similarity") or iris_auth_response.get("best_similarity")
-            iris_details["matched_user_id"] = iris_auth_response.get("matched_user_id")
-            iris_details["detail"] = iris_auth_response.get("detail")
-            
-        except HTTPException as e: # Catch HTTP errors from iris API call
-            iris_details["message"] = f"Iris API error: {e.detail}"
-            iris_details["detail"] = str(e.detail)
+            iris_details = iris_auth_response
+        except HTTPException as e:
+            iris_details = {"message": f"Iris API error: {e.detail}", "detail": str(e.detail)}
             iris_is_match = False
         except Exception as e:
-            iris_details["message"] = f"Unexpected iris authentication error: {e}"
-            iris_details["detail"] = str(e)
+            iris_details = {"message": f"Unexpected iris authentication error: {e}", "detail": str(e)}
             iris_is_match = False
-            print(f"Iris authentication error: {e}")
             traceback.print_exc()
         finally:
             iris_details["status"] = "success" if iris_is_match else "failure"
-            iris_details["is_authenticated"] = iris_is_match  
+            iris_details["is_authenticated"] = iris_is_match
             combined_details["iris_authentication"] = iris_details
             if iris_image_path and os.path.exists(iris_image_path):
                 os.remove(iris_image_path)
@@ -419,74 +398,59 @@ async def verify_customer_identity(
     if face_image and iris_image:
         overall_verified = face_is_match and iris_is_match
         response_message += f" Face: {face_details.get('message', 'N/A')}. Iris: {iris_details.get('message', 'N/A')}."
-        combined_details["overall_status"] = "success" if overall_verified else "failure"
-        combined_details["message"] = response_message
     elif face_image:
         overall_verified = face_is_match
         response_message += f" Face: {face_details.get('message', 'N/A')}."
-        combined_details["overall_status"] = "success" if overall_verified else "failure"
-        combined_details["message"] = response_message
     elif iris_image:
         overall_verified = iris_is_match
         response_message += f" Iris: {iris_details.get('message', 'N/A')}."
-        combined_details["overall_status"] = "success" if overall_verified else "failure"
-        combined_details["message"] = response_message
 
-    # Final response to frontend
-    return_payload = {
-        "verified": overall_verified,
-        "message": response_message,
-        "face_distance": face_details.get("distance"),
-        "face_image_url": face_details.get("image_url"),
-        "iris_similarity": iris_details.get("similarity"),
-        "iris_matched_user_id": iris_details.get("matched_user_id"),
-        "biometric_types_attempted": combined_details["biometric_types_attempted"],
-        "details": {
-            "face": face_details,
-            "iris": iris_details
-        }
-    }
-
-    # --- Log and Email (in finally block for consistency and cleanup) ---
-    # Prepare details for logging and email based on the combined process
-    final_log_details = {
-        "face_verification": combined_details["face_verification"],
-        "iris_authentication": combined_details["iris_authentication"],
-        "overall_message": response_message,
-        "overall_verified": overall_verified,
-        "types_attempted": combined_details["biometric_types_attempted"],
-        "face_distance": face_details.get("distance"),
-        "iris_simiarity": iris_details.get("matched_user_id")
-    }
-    
+    # --- Log and Email ---
     customer_email = None
     customer_name = "Customer"
+    customer_surname = ""
     try:
         customer_response = supabase.table("Customer").select("Name, SurName, Email").eq("National_ID", customer_id).single().execute()
         if customer_response.data:
             customer_data = customer_response.data
             customer_email = customer_data.get('Email')
-            customer_name = f"{customer_data.get('Name', '')} {customer_data.get('SurName', '')}".strip() or "Customer"
+            customer_name = customer_data.get('Name') or "Customer"
+            customer_surname = customer_data.get('SurName') or ""
     except Exception as e:
         print(f"Warning: Could not fetch customer email for ID {customer_id}: {e}")
         
-    log_payload = {
-        "customer_id": customer_id,
-        "biometric_type": "combined" if len(combined_details["biometric_types_attempted"]) > 1 else combined_details["biometric_types_attempted"][0],
-        "status": "success" if overall_verified else "failure",
-        "details": json.dumps(final_log_details)  # Convert nested dict to JSON string
+    # --- THIS IS THE CORRECTED PART ---
+    # 1. We create a payload that matches the columns in the 'CustomerLogs' table.
+    log_payload_for_db = {
+        "Customer_National_ID": customer_id,
+        "Name": customer_name,
+        "SurName": customer_surname,
+        "Result": overall_verified, # This is a boolean (True/False)
+        "Transaction_Timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
     }
+    
     try:
-        supabase.table("AuthenticationAttempts").insert([log_payload]).execute()
-        print(f"Logged {'combined' if len(combined_details['biometric_types_attempted']) > 1 else combined_details['biometric_types_attempted'][0]} authentication attempt for {customer_id}: {log_payload['status']}")
+        # 2. We use the correct table name: "CustomerLogs".
+        supabase.table("CustomerLogs").insert([log_payload_for_db]).execute()
+        print(f"Logged verification attempt for {customer_id}: {'Success' if overall_verified else 'Failure'}")
     except Exception as e:
         print(f"ERROR: Failed to log authentication attempt to Supabase: {e}")
         traceback.print_exc()
 
     if customer_email:
-        background_tasks.add_task(send_authentication_report_email, customer_email, customer_name, log_payload["biometric_type"], overall_verified, final_log_details)
+        final_log_details = {"face_verification": face_details, "iris_authentication": iris_details}
+        biometric_type = " and ".join(combined_details["biometric_types_attempted"])
+        background_tasks.add_task(send_authentication_report_email, customer_email, f"{customer_name} {customer_surname}".strip(), biometric_type, overall_verified, final_log_details)
     
-    return return_payload
+    # --- Final response to frontend ---
+    return {
+        "verified": overall_verified,
+        "message": response_message,
+        "details": {
+            "face": face_details,
+            "iris": iris_details
+        }
+    }
 
 @app.get("/customer-details/{customer_id}")
 async def get_customer_details(customer_id: int):
@@ -622,82 +586,76 @@ async def register_user(user_data: dict):
         raise HTTPException(status_code=400, detail=f"Invalid data format: {ve}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")
-    
-# In Main.py
+
 @app.post("/transaction")
 async def create_transaction(transaction: TransactionCreate):
-    try:
-        # 1. Find customer balance & info
-        customer_response = supabase.table("Customer") \
-            .select("Name", "SurName", "Balance") \
-            .eq("National_ID", transaction.customer_id) \
-            .single().execute()
-        
-        if not customer_response.data:
-            # Log "Access Denied" if customer not found
-            supabase.table("CustomerLogs").insert([{
-                "Customer_National_ID": transaction.customer_id,
-                "Name": "Unknown",
-                "SurName": "Unknown",
-                "Result": False,
-                "Transaction_Timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
-            }]).execute()
-            raise HTTPException(status_code=404, detail="Customer not found")
-        
+    # --- Step 1: Check all conditions first to determine the final status ---
+
+    is_successful = True
+    failure_reason = ""
+    http_status_code = 200 # Default to success
+
+    # Check if the customer exists
+    customer_response = supabase.table("Customer") \
+        .select("Name", "SurName", "Balance") \
+        .eq("National_ID", transaction.customer_id) \
+        .single().execute()
+
+    if not customer_response.data:
+        is_successful = False
+        failure_reason = "Customer Not Found"
+        http_status_code = 404
+    else:
+        # If customer exists, check if funds are sufficient for a withdrawal
         current_balance = customer_response.data.get('Balance') or 0
-        customer_name = customer_response.data.get("Name", "")
-        customer_surname = customer_response.data.get("SurName", "")
+        if transaction.transaction_type == 'withdrawal' and current_balance < transaction.amount:
+            is_successful = False
+            failure_reason = "Insufficient Funds"
+            http_status_code = 400
 
-        # 2. Handle withdrawal
-        if transaction.transaction_type == 'withdrawal':
-            if current_balance < transaction.amount:
-                # Log failed transaction
-                supabase.table("CustomerLogs").insert([{
-                    "Customer_National_ID": transaction.customer_id,
-                    "Name": customer_name,
-                    "SurName": customer_surname,
-                    "Result": False,  # Access Denied
-                    "Transaction_Timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
-                }]).execute()
-                raise HTTPException(status_code=400, detail="Insufficient funds for withdrawal.")
-            new_balance = current_balance - transaction.amount
-        else:  # Deposit
-            new_balance = current_balance + transaction.amount
+    # --- Step 2: Use one main IF/ELSE block to execute and log the result ---
 
-        # 3. Update the balance
-        supabase.table("Customer").update({"Balance": new_balance}) \
-            .eq("National_ID", transaction.customer_id).execute()
+    if is_successful:
+        # --- SUCCESS LOGIC ---
+        # This code runs only if all checks passed.
+        customer_data = customer_response.data
+        customer_name = customer_data.get("Name", "N/A")
+        customer_surname = customer_data.get("SurName", "N/A")
+        current_balance = customer_data.get('Balance') or 0
 
-        # 4. Insert into Transactions table
+        new_balance = (current_balance - transaction.amount) if transaction.transaction_type == 'withdrawal' else (current_balance + transaction.amount)
+
+        # Perform database updates for the successful transaction
+        supabase.table("Customer").update({"Balance": new_balance}).eq("National_ID", transaction.customer_id).execute()
         transaction_record = {
-            "customer_id": transaction.customer_id,
-            "employee_id": transaction.employee_id,
-            "transaction_type": transaction.transaction_type,
-            "amount": transaction.amount,
-            "note": transaction.note,
-            "balance_after": new_balance
+            "customer_id": transaction.customer_id, "employee_id": transaction.employee_id,
+            "transaction_type": transaction.transaction_type, "amount": transaction.amount,
+            "note": transaction.note, "balance_after": new_balance
         }
         supabase.table("Transactions").insert(transaction_record).execute()
 
-        # 5. Insert into CustomerLogs (Access Granted)
-        supabase.table("CustomerLogs").insert([{
-            "Customer_National_ID": transaction.customer_id,
-            "Name": customer_name,
-            "SurName": customer_surname,
-            "Result": True,
-            "Transaction_Timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
-        }]).execute()
-
-        return {
-            "message": f"{transaction.transaction_type.capitalize()} successful!",
-            "new_balance": new_balance
-        }
+        # Log the success
+        supabase.table("CustomerLogs").insert([{"Customer_National_ID": transaction.customer_id, "Name": customer_name, "SurName": customer_surname, "Result": True, "Transaction_Timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()}]).execute()
+        
+        return JSONResponse(status_code=200, content={"message": f"{transaction.transaction_type.capitalize()} successful!", "new_balance": new_balance})
     
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"An error occurred during the transaction: {e}")
-        raise HTTPException(status_code=500, detail="An internal error occurred during the transaction.")
+    else:
+        # --- FAILED LOGIC ---
+        # This code runs if any check failed.
+        log_payload = {"Customer_National_ID": transaction.customer_id, "Result": False, "Transaction_Timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()}
+
+        # Create the correct log message based on the failure reason
+        if failure_reason == "Customer Not Found":
+            log_payload["Name"] = "Unknown"
+            log_payload["SurName"] = "Customer"
+        elif failure_reason == "Insufficient Funds":
+            log_payload["Name"] = customer_response.data.get("Name", "N/A")
+            log_payload["SurName"] = customer_response.data.get("SurName", "N/A")
+
+        # Log the failure
+        supabase.table("CustomerLogs").insert([log_payload]).execute()
+
+        return JSONResponse(status_code=http_status_code, content={"message": failure_reason})
 
 @app.get("/registration-records")
 async def get_registration_records():
@@ -742,7 +700,6 @@ async def get_employee_logs():
     try:
         response = supabase.table("EmployeeLogs") \
             .select("*") \
-            .eq("EmResult", "Success") \
             .order("Log_Timestamp", desc=True) \
             .limit(10) \
             .execute()
