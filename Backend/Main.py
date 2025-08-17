@@ -507,6 +507,19 @@ async def get_customer_details(customer_id: int):
         print(f"Error fetching customer details: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch customer details.")
 
+# Getting a all customer 
+@app.get("/customers")
+async def list_customers():
+    try:
+        response = supabase.table("Customer").select("*").execute()
+        if not response.data:
+            return []
+        return response.data
+    except Exception as e:
+        print(f"❌ Error fetching customers: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch customers.")
+
+
 @app.post("/register-employee")
 async def register_employee(employee_data: EmployeeCreate):
     try:
