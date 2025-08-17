@@ -3,16 +3,28 @@ import { ref, onMounted } from "vue";
 import axios from "axios";
 
 const customers = ref<any[]>([]);
+const employees = ref<any[]>([])
 const loading = ref(true);
 const error = ref<string | null>(null);
 
 onMounted(async () => {
+ // Fetch all customer
   try {
     const response = await axios.get("http://localhost:8000/customers");
     customers.value = response.data;
     console.log(customers.value)
   } catch (err: any) {
     error.value = err.response?.data?.detail || "Failed to fetch customers";
+  } finally {
+    loading.value = false;
+  }
+
+ // Fetch all employees 
+  try {
+    const response = await axios.get("https//localhost:8000/employees");
+    employees.value = response.data
+  } catch (err: any) {
+    error.value = err.response?.data?.detail || "Failed to fetch employees"
   } finally {
     loading.value = false;
   }

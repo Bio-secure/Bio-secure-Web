@@ -518,6 +518,17 @@ async def list_customers():
     except Exception as e:
         print(f"❌ Error fetching customers: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch customers.")
+    
+# Get all Employees
+@app.get("/employees")
+async def list_employees():
+    try: 
+        response = supabase.table("Employees").select("*").execute()
+        if not response.data:
+            return []
+        return response.data
+    except Exception as e: 
+        raise HTTPException(status_code=500, detail="Failed to fetch Employees.") 
 
 
 @app.post("/register-employee")
