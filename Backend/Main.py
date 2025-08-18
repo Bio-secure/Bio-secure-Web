@@ -262,18 +262,6 @@ async def register_biometric(
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred during database insertion: {e}")
 
 
-@app.get("/customers")
-def get_all_customers():
-    try:
-        response = supabase.table('Customer').select('National_ID, Name, SurName').execute()
-        if response.data:
-            for customer in response.data:
-                customer['displayName'] = f"{customer['Name']} {customer['SurName']}"
-            return response.data
-        return []
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Could not fetch customer list.")
-
 # For only face authentication
 async def authenticate_face_from_api(customer_id: int, face_image_path: str):
     try:
@@ -511,7 +499,7 @@ async def get_customer_details(customer_id: int):
 @app.get("/customers")
 async def list_customers():
     try:
-        response = supabase.table("Customer").select("*").execute()
+        response = supabase.table("Customer").select("National_ID, SurName, phone_no, email").execute()
         if not response.data:
             return []
         return response.data
@@ -731,3 +719,8 @@ async def get_employee_logs():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch employee logs: {str(e)}")
     
+@app.get("/debug")
+async def debug():
+    response = supabase.table("Customer").select("*").limit(2).execute()
+    print("DEBUG DATA:", response.data)
+    return response.data

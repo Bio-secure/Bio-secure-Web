@@ -64,7 +64,7 @@ onMounted(async () => {
               <td class="py-2 px-4">{{ c.National_ID }}</td>
               <td class="py-2 px-4">{{ c.Name }}</td>
               <td class="py-2 px-4">{{ c.SurName }}</td>
-              <td class="py-2 px-4">{{ c.PhoneNo }}</td>
+              <td class="py-2 px-4">{{ c.phone_no }}</td>
               <td class="py-2 px-4">{{ c.email }}</td>
             </tr>
           </tbody>
