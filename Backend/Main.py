@@ -97,14 +97,6 @@ class TransactionCreate(BaseModel):
     amount: float = Field(..., gt=0) 
     note: Optional[str] = None
 
-UPLOAD_FOLDER = "uploads"
-ASSET_FOLDER = "asset"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(ASSET_FOLDER, exist_ok=True)
-
-app.mount("/uploads", StaticFiles(directory=UPLOAD_FOLDER), name="uploads")
-app.mount("/assets", StaticFiles(directory=ASSET_FOLDER), name="asset")
-
 BIOMETRIC_BUCKET = os.getenv("BIOMETRIC_BUCKET")
 
 async def authenticate_iris_from_api(user_id: str, image_data_b64: str) -> dict:
@@ -125,6 +117,55 @@ async def authenticate_iris_from_api(user_id: str, image_data_b64: str) -> dict:
             raise HTTPException(status_code=response.status_code, detail=f"Iris API error: {error_detail}")
         else:
             raise HTTPException(status_code=500, detail=f"Failed to communicate with Iris API: {e}")
+        
+async def authenticate_face_from_api(customer_id: int, face_image_path: str):
+    try:
+        embedding_objs = DeepFace.represent(
+            img_path=face_image_path,
+            model_name="VGG-Face",
+            enforce_detection=True
+        )
+        if not embedding_objs:
+             return {
+                "is_authenticated": False,
+                "message": "Could not find a face in the provided image."
+            }
+        uploaded_face_embedding = embedding_objs[0]['embedding']
+
+        db_response = supabase.table('Biometric').select('face_embedding, face_image_url').eq('National_ID', customer_id).single().execute()
+
+        if not db_response.data or not db_response.data.get('face_embedding'):
+            return {
+                "is_authenticated": False,
+                "message": "No registered face biometric data found for this customer."
+            }
+
+        stored_face_embedding_data = db_response.data.get('face_embedding')
+        match_face_image_url = db_response.data.get('face_image_url')
+
+        # --- THIS IS THE ROBUST CHANGE ---
+        # It handles data stored as a string (old) or as a list/jsonb (new)
+        if isinstance(stored_face_embedding_data, str):
+            stored_face_embedding = json.loads(stored_face_embedding_data)
+        else:
+            stored_face_embedding = stored_face_embedding_data
+
+        distance = cosine(uploaded_face_embedding, stored_face_embedding)
+        is_match = bool(distance < FACE_DISTANCE_THRESHOLD)
+
+        return {
+            "is_authenticated": is_match,
+            "distance": float(distance) if distance is not None else None,
+            "image_url": match_face_image_url,
+            "message": "Face Verified Successfully" if is_match else "Face Verification Failed"
+        }
+
+    except Exception as e:
+        return {
+            "is_authenticated": False,
+            "message": f"Face verification error: {e}",
+            "detail": str(e)
+        }
 
 @app.get("/")
 def root():
@@ -139,8 +180,24 @@ async def register_biometric(
     if not DeepFace:
         raise HTTPException(status_code=503, detail="Facial recognition service is not available.")
 
-    face_filename = f"face_{uuid.uuid4()}.{face_image.filename.split('.')[-1]}"
-    face_image_path = os.path.join(UPLOAD_FOLDER, face_filename)
+    # --- NEW: Fetch customer name from the database first ---
+    try:
+        customer_response = supabase.table("Customer").select("Name, SurName").eq("National_ID", int(national_id)).single().execute()
+        if not customer_response.data:
+            raise HTTPException(status_code=404, detail=f"Customer with National ID {national_id} not found.")
+        
+        customer_name = customer_response.data.get("Name", "")
+        customer_surname = customer_response.data.get("SurName", "")
+        # Create a clean, URL-safe version of the name for the filename
+        sanitized_full_name = f"{customer_name}_{customer_surname}".replace(" ", "_")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching customer details: {e}")
+
+    # --- FILENAME LOGIC UPDATED ---
+    face_ext = face_image.filename.split('.')[-1]
+    face_filename = f"face/{national_id}_{sanitized_full_name}.{face_ext}" # <-- UPDATED
+    face_image_path = os.path.join(f"{national_id}_face_temp.{face_ext}")
+
     face_image_url = None
     face_embedding = None
 
@@ -150,11 +207,11 @@ async def register_biometric(
         
         embedding_objs = DeepFace.represent(img_path=face_image_path, model_name="VGG-Face", enforce_detection=False)
         if not embedding_objs or 'embedding' not in embedding_objs[0]:
-            raise HTTPException(status_code=400, detail="Could not generate a face embedding. Ensure the image contains a clear face.")
+            raise HTTPException(status_code=400, detail="Could not generate a face embedding.")
         face_embedding = embedding_objs[0]['embedding']
 
         with open(face_image_path, "rb") as f:
-            supabase.storage.from_(BIOMETRIC_BUCKET).upload(file=f, path=face_filename)
+            supabase.storage.from_(BIOMETRIC_BUCKET).upload(file=f, path=face_filename, file_options={"upsert": "true"})
         
         face_image_url = supabase.storage.from_(BIOMETRIC_BUCKET).get_public_url(face_filename)
     except Exception as e:
@@ -168,8 +225,11 @@ async def register_biometric(
     iris_embedding = None
 
     if iris_image:
-        iris_filename = f"iris_{uuid.uuid4()}.{iris_image.filename.split('.')[-1]}"
-        temp_iris_image_path = os.path.join(UPLOAD_FOLDER, iris_filename)
+        # --- FILENAME LOGIC UPDATED ---
+        iris_ext = iris_image.filename.split('.')[-1]
+        iris_filename = f"iris/{national_id}_{sanitized_full_name}.{iris_ext}" # <-- UPDATED
+        temp_iris_image_path = os.path.join(f"{national_id}_iris_temp.{iris_ext}")
+        
         try:
             with open(temp_iris_image_path, "wb") as buffer:
                 shutil.copyfileobj(iris_image.file, buffer)
@@ -190,12 +250,10 @@ async def register_biometric(
                     raise ValueError("Iris API returned no embedding.")
 
             with open(temp_iris_image_path, "rb") as f_upload:
-                supabase.storage.from_(BIOMETRIC_BUCKET).upload(file=f_upload, path=iris_filename)
+                supabase.storage.from_(BIOMETRIC_BUCKET).upload(file=f_upload, path=iris_filename, file_options={"upsert": "true"})
             iris_image_url = supabase.storage.from_(BIOMETRIC_BUCKET).get_public_url(iris_filename)
         except Exception as e:
             traceback.print_exc()
-            iris_embedding = None
-            iris_image_url = None
         finally:
             if os.path.exists(temp_iris_image_path):
                 os.remove(temp_iris_image_path)
@@ -213,31 +271,6 @@ async def register_biometric(
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred during database insertion: {e}")
-
-async def authenticate_face_from_api(customer_id: int, face_image_path: str):
-    try:
-        embedding_objs = DeepFace.represent(img_path=face_image_path, model_name="VGG-Face", enforce_detection=True)
-        uploaded_face_embedding = embedding_objs[0]['embedding']
-        db_response = supabase.table('Biometric').select('face_embedding, face_image_url').eq('National_ID', customer_id).single().execute()
-
-        if not db_response.data or not db_response.data.get('face_embedding'):
-            return {"is_authenticated": False, "message": "No registered face biometric data found for this customer."}
-        
-        stored_face_embedding_str = db_response.data.get('face_embedding')
-        match_face_image_url = db_response.data.get('face_image_url')
-        stored_face_embedding = json.loads(stored_face_embedding_str)
-        
-        distance = cosine(uploaded_face_embedding, stored_face_embedding)
-        is_match = bool(distance < FACE_DISTANCE_THRESHOLD)
-
-        return {
-            "is_authenticated": is_match,
-            "distance": float(distance),
-            "image_url": match_face_image_url,
-            "message": "Face Verified Successfully" if is_match else "Face Verification Failed"
-        }
-    except Exception as e:
-        return {"is_authenticated": False, "message": f"Face verification error: {e}", "detail": str(e)}
 
 @app.post("/verify")
 async def verify_customer_identity(
@@ -282,7 +315,7 @@ async def verify_customer_identity(
     face_details = {}
     iris_details = {}
     if face_image:
-        face_image_path = os.path.join(UPLOAD_FOLDER, f"{customer_id}_face_query.jpg")
+        face_image_path = os.path.join(f"{customer_id}_face_query.jpg")
         try:
             with open(face_image_path, "wb") as buffer:
                 shutil.copyfileobj(face_image.file, buffer)
@@ -292,7 +325,7 @@ async def verify_customer_identity(
         finally:
             if os.path.exists(face_image_path): os.remove(face_image_path)
     if iris_image:
-        iris_image_path = os.path.join(UPLOAD_FOLDER, f"{customer_id}_iris_query.jpg")
+        iris_image_path = os.path.join(f"{customer_id}_iris_query.jpg")
         try:
             with open(iris_image_path, "rb") as f:
                 iris_image_b64 = base64.b64encode(f.read()).decode('utf-8')

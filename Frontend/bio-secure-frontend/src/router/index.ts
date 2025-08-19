@@ -16,6 +16,8 @@ import authState from '../services/authService';
 import ImageRegis from '../view/ImageRegis.vue'
 // @ts-ignore
 import AccountMag from '../view/AccountMag.vue'
+// @ts-ignore
+import RegisterBiometric from '../view/RegisterBiometric.vue'
 
 const routes = [
   {
@@ -63,6 +65,11 @@ const routes = [
     path: '/verify',
     name: 'image',
     component: ImageRegis
+  },
+  {
+    path: '/register-biometric/:id', // The ':id' makes it a dynamic parameter
+    name: 'RegisterBiometric',
+    component: RegisterBiometric
   },
 ]
 
