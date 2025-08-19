@@ -1,0 +1,139 @@
+<html>
+    <head><title>Iris Identification Project</title></head>
+        <style>
+            .row {
+            display: flex;
+            }
+            .column {
+            flex: 33.33%;
+            padding: 5px;
+            }
+        </style>
+    <body>
+        <h1>Iris Identification :: BMT-20 Scanner</h1>
+
+        <p>                
+                <button onClick="capture();">Capture</button>
+                <h1 type="text" id="txt_L"></h1>
+                <h1 type="text" id="txt_R"></h1>
+        </p>
+
+        <div class="row">
+            <div class="column">
+                Right Eye: <input type="checkbox" id="Check_R" >
+                <img id="reye" src="" alt="" style="width:100%">a
+              </div>
+
+            <div class="column">
+                Left Eye: <input type="checkbox" id="Check_L" >
+                <img id="leye" src="" alt="" style="width:100%">
+            </div>
+            
+
+          </div>
+
+    <script type="text/javascript"> 
+            var wsUri = "ws://127.0.0.1:5000/Iris";
+            var websocket = null;
+            var leye = document.getElementById("leye");
+            var reye = document.getElementById("reye");
+ 
+            var L = document.getElementById("Check_L").checked;
+            var R = document.getElementById("Check_R").checked;
+
+            window.onload = function() {
+                initWebSocket();
+                document.getElementById("Check_L").checked = true;
+                document.getElementById("Check_R").checked = true; 
+
+            };
+
+            function initWebSocket() {
+                try {
+                    if (typeof MozWebSocket == 'function')
+                        WebSocket = MozWebSocket;
+                    if ( websocket && websocket.readyState == 1 )
+                        websocket.close();
+
+                        websocket = new WebSocket( wsUri );
+
+                        websocket.onopen = function (evt) {
+                        websocket.send("connect");
+                    };
+
+                    websocket.onclose = function (evt) {                    
+                        console.log("DISCONNECTED");
+                    };
+
+                    websocket.onmessage = function (evt) {
+                        var msg_type = evt.data.split(",")[0];
+                        console.log("Message received :", msg_type );
+
+                        if (msg_type === "irises") {
+                                l_iris = "data:image/bmp;base64, ".concat(evt.data.split(",")[1]);
+                                r_iris = "data:image/bmp;base64, ".concat(evt.data.split(",")[2]);
+                                leye.src = l_iris;
+                                reye.src = r_iris;
+                        }
+
+                        else if (msg_type === "irise_L") {
+                                l_iris = "data:image/bmp;base64, ".concat(evt.data.split(",")[1]);
+
+                                leye.src = l_iris;
+                                reye.src ="";
+                            }
+
+                        else if (msg_type === "irise_R") {
+                                r_iris = "data:image/bmp;base64, ".concat(evt.data.split(",")[1]);
+
+                                leye.src = "";
+                                reye.src = r_iris;
+                            }
+                        };
+
+                        websocket.onerror = function (evt) {
+                        console.log("'ERROR: ' + evt.data");
+                    };
+                } catch (exception) {
+                    console.log("'ERROR: ' + exception");
+                }
+            }
+
+            function capture() {
+                leye.src = "";
+                reye.src = "";
+                L = document.getElementById("Check_L").checked;
+                R = document.getElementById("Check_R").checked;
+
+                if (websocket != null)
+                {   
+                    if (R==true && L==true){
+                        console.log("Both_EYES");
+                        websocket.send("BOTH_EYES");
+                        
+                    }else if(L==true && R ==false){
+                        console.log("Left_EYES");
+                        websocket.send("LEFT_EYE");
+                 
+                    } else if(R==true && L==false){
+                        console.log("Right_EYES");
+                        websocket.send("RIGHT_EYE");
+                        
+                    }
+                }
+            }
+
+            function stopCapture() {
+                if (websocket)
+                websocket.send("stop");
+            }
+
+            function stopWebSocket() {
+                if (websocket)
+                websocket.send("close");
+                websocket.close();
+            }
+
+        </script>
+    </body>
+</html>
