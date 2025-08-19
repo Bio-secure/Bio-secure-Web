@@ -97,6 +97,8 @@ export default {
       }
     },
 
+    // Inside the <script> methods object
+
     async fetchEmployeeLogins() {
       this.loading.employeeLogins = true;
       this.error.employeeLogins = null;
@@ -111,7 +113,9 @@ export default {
             id: 'emp-' + log.LogID,
             date: this.formatDate(log.Log_Timestamp),
             time: this.formatTime(log.Log_Timestamp),
-            name: `${log.EmName} ${log.EmSurName}`,
+            name: `${log.EmName || ''} ${log.EmSurName || ''}`.trim() || 'Unknown',
+            // --- ADD THIS LINE ---
+            result: log.EmResult === 'Success' ? 'Success' : 'Failed' 
           };
         });
       } catch (err) {
@@ -267,12 +271,19 @@ export default {
               <tr class="border-b text-gray-500">
                 <th class="text-left py-2 px-2">Date & Time</th>
                 <th class="text-left py-2 px-2">Name</th>
+                <th class="text-left py-2 px-2">Result</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="event in employeeLogins" :key="event.id" class="border-b hover:bg-gray-50 transition">
                 <td class="py-2 px-2 whitespace-nowrap">{{ event.date }} {{ event.time }}</td>
                 <td class="py-2 px-2">{{ event.name }}</td>
+                <td 
+                  :class="event.result === 'Success' ? 'text-green-600' : 'text-red-500'" 
+                  class="py-2 px-2 font-semibold"
+                >
+                  {{ event.result }}
+                </td>
               </tr>
             </tbody>
           </table>
