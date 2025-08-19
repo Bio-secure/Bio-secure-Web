@@ -11,6 +11,7 @@ export default {
     return {
       authState: authState,
       showEmployeeRegistrationModal: false, 
+      showAccouneManagerModal: false,
       
       customerEvents: [],
       employeeLogins: [],
@@ -91,6 +92,7 @@ export default {
         this.customerSummary = { success: successCount, denied: deniedCount };
 
       } catch (err) {
+        console.error('Error fetching customer events:', err);
         this.error.customerEvents = 'Failed to load customer access events.';
       } finally {
         this.loading.customerEvents = false;
@@ -119,6 +121,7 @@ export default {
           };
         });
       } catch (err) {
+        console.error('Error fetching employee logins:', err);
         this.error.employeeLogins = 'Failed to load employee logins.';
       } finally {
         this.loading.employeeLogins = false;
@@ -191,7 +194,15 @@ export default {
     },
     closeEmployeeRegistrationModal() {
       this.showEmployeeRegistrationModal = false;
+    },
+
+    openAccountManagerModal() {
+      this.showAccouneManagerModal = true;
+    },
+    closeAccountManagerModal() {
+      this.showAccouneManagerModal = false;
     }
+
   }
 };
 </script>
@@ -348,6 +359,12 @@ export default {
         </template>
       </p>
       <div class="w-full mt-auto space-y-3">
+        <RouterLink 
+          to="/monitor/account" 
+          class="w-full block text-center py-2 text-white text-sm bg-blue-600 hover:bg-blue-700 rounded-xl shadow transition"
+        >
+          Account Manager
+        </RouterLink>
         <button
           @click="openEmployeeRegistrationModal"
           class="w-full py-2 text-white text-sm bg-blue-600 hover:bg-blue-700 rounded-xl shadow transition"

@@ -14,6 +14,8 @@ import EmLogin from '../view/EmLogin.vue'
 import authState from '../services/authService'; 
 // @ts-ignore
 import ImageRegis from '../view/ImageRegis.vue'
+// @ts-ignore
+import AccountMag from '../view/AccountMag.vue'
 
 const routes = [
   {
@@ -41,6 +43,11 @@ const routes = [
     name: 'monitor',
     component: Monitor,
     meta: { requiresAuth: true, requiresAdmin: true }
+  },
+  {
+    path: '/monitor/account',
+    name: 'accountManager',
+    component: AccountMag,
   },
   {
     path: '/info/:id',

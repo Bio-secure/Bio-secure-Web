@@ -262,18 +262,6 @@ async def register_biometric(
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred during database insertion: {e}")
 
 
-@app.get("/customers")
-def get_all_customers():
-    try:
-        response = supabase.table('Customer').select('National_ID, Name, SurName').execute()
-        if response.data:
-            for customer in response.data:
-                customer['displayName'] = f"{customer['Name']} {customer['SurName']}"
-            return response.data
-        return []
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Could not fetch customer list.")
-
 # For only face authentication
 async def authenticate_face_from_api(customer_id: int, face_image_path: str):
     try:
@@ -507,6 +495,30 @@ async def get_customer_details(customer_id: int):
         print(f"Error fetching customer details: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch customer details.")
 
+# Getting a all customer 
+@app.get("/customers")
+async def list_customers():
+    try:
+        response = supabase.table("Customer").select("National_ID, SurName, phone_no, email").execute()
+        if not response.data:
+            return []
+        return response.data
+    except Exception as e:
+        print(f"❌ Error fetching customers: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch customers.")
+    
+# Get all Employees
+@app.get("/employees")
+async def list_employees():
+    try: 
+        response = supabase.table("Employees").select("*").execute()
+        if not response.data:
+            return []
+        return response.data
+    except Exception as e: 
+        raise HTTPException(status_code=500, detail="Failed to fetch Employees.") 
+
+
 @app.post("/register-employee")
 async def register_employee(employee_data: EmployeeCreate):
     try:
@@ -707,3 +719,8 @@ async def get_employee_logs():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch employee logs: {str(e)}")
     
+@app.get("/debug")
+async def debug():
+    response = supabase.table("Customer").select("*").limit(2).execute()
+    print("DEBUG DATA:", response.data)
+    return response.data
