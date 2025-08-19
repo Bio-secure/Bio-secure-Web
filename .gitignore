@@ -2,5 +2,3 @@ Backend/asset
 Backend/uploads
 Frontend/bio-secure-frontend/.env
 Backend/.env
-Backend/__pycache__
-Backend/utils
