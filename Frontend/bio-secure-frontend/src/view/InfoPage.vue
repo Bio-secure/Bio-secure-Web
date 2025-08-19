@@ -76,7 +76,7 @@ export default defineComponent({
         user.value = {
           name: data.Name,
           surname: data.SurName,
-          phone: data.PhoneNo,
+          phone: data.phone_no,
           id: data.BirthDate,
           balance: data.Balance,
           face_image_url: data.face_image_url
