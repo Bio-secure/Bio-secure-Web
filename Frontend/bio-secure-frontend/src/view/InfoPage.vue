@@ -1,10 +1,19 @@
 <script lang="ts">
 import { defineComponent, ref, onMounted, computed } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { useRoute } from 'vue-router';
 // @ts-ignore
 import authState from '../services/authService';
 // @ts-ignore
 import VerificationModal from '../components/VerificationModal.vue';
+
+// Importing icons for the improved UI
+import { 
+  ArrowUpCircleIcon, 
+  ArrowDownCircleIcon,
+  PhoneIcon,
+  EnvelopeIcon,
+  CakeIcon,
+} from '@heroicons/vue/24/outline';
 
 interface Transaction {
   id: number;
@@ -12,23 +21,30 @@ interface Transaction {
   description: string;
   amount: number;
   employeeName?: string;
+  note?: string;
 }
 
 export default defineComponent({
   name: 'AccountDashboard',
   components: {
-    VerificationModal
+    VerificationModal,
+    ArrowUpCircleIcon,
+    ArrowDownCircleIcon,
+    PhoneIcon,
+    EnvelopeIcon,
+    CakeIcon,
   },
   setup() {
     const route = useRoute();
-    const router = useRouter();
     const user = ref({
       name: '',
       surname: '',
       phone: '',
       id: '',
       balance: 0,
-      face_image_url: ''
+      face_image_url: '',
+      email: '',
+      birthDate: '',
     });
 
     const transactions = ref<Transaction[]>([]); 
@@ -44,12 +60,9 @@ export default defineComponent({
     const pendingTransaction = ref(null as any);
     const verificationModeRequired = ref('face');
 
-    // Computed property to format the amount with commas for display
     const formattedAmount = computed({
       get: () => {
-        if (transaction.value.amount === null || transaction.value.amount === 0) {
-          return '';
-        }
+        if (transaction.value.amount === null || transaction.value.amount === 0) return '';
         return transaction.value.amount.toLocaleString('en-US');
       },
       set: (newValue: string) => {
@@ -77,9 +90,11 @@ export default defineComponent({
           name: data.Name,
           surname: data.SurName,
           phone: data.phone_no,
-          id: data.BirthDate,
+          id: data.National_ID,
           balance: data.Balance,
-          face_image_url: data.face_image_url
+          face_image_url: data.face_image_url,
+          email: data.Email,
+          birthDate: data.BirthDate,
         };
 
         if (data.transactions && data.transactions.length > 0) {
@@ -88,7 +103,8 @@ export default defineComponent({
             date: new Date(tx.created_at).toLocaleDateString('en-GB'),
             description: tx.transaction_type.charAt(0).toUpperCase() + tx.transaction_type.slice(1),
             amount: tx.transaction_type === 'deposit' ? tx.amount : -tx.amount,
-            employeeName: tx.employee_name || 'N/A'
+            employeeName: tx.employee_name || 'N/A',
+            note: tx.note
           }));
         }
 
@@ -117,7 +133,8 @@ export default defineComponent({
             date: new Date().toLocaleDateString('en-GB'),
             description: details.transaction_type.charAt(0).toUpperCase() + details.transaction_type.slice(1),
             amount: details.transaction_type === 'deposit' ? details.amount : -details.amount,
-            employeeName: `${authState.name} ${authState.surname}`
+            employeeName: `${authState.name} ${authState.surname}`,
+            note: details.note,
         };
         transactions.value.unshift(newTx);
         
@@ -145,8 +162,7 @@ export default defineComponent({
       
       if (transactionDetails.amount >= 1000000) {
         verificationModeRequired.value = 'full';
-      } 
-      else {
+      } else {
         verificationModeRequired.value = 'face';
       }
 
@@ -166,13 +182,23 @@ export default defineComponent({
       pendingTransaction.value = null;
     };
 
+    const formattedBirthDate = computed(() => {
+      if (!user.value.birthDate) return 'N/A';
+      return new Date(user.value.birthDate).toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric'
+      });
+    });
+
     const formattedBalance = computed(() =>
-      user.value.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })
+      user.value.balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     );
 
     const formatAmount = (amount: number) => {
       if (amount === 0) return '-';
-      return `${amount > 0 ? '+' : ''}${amount.toLocaleString()}`;
+      const formatted = Math.abs(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      return `${amount > 0 ? '+' : '−'} ${formatted}`;
     };
     
     const fullName = computed(() => `${user.value.name} ${user.value.surname}`);
@@ -193,130 +219,157 @@ export default defineComponent({
       verificationModeRequired,
       handleVerificationSuccess,
       handleVerificationFail,
-      formattedAmount
+      formattedAmount,
+      formattedBirthDate,
     };
   }
 });
 </script>
 
 <template>
-  <div>
+  <div class="bg-slate-50 min-h-screen">
     <VerificationModal
       v-if="isVerificationModalVisible"
-      :customer-id="$route.params.id" 
+      :customer-id="String($route.params.id)" 
       :verification-mode="verificationModeRequired"
       @close="isVerificationModalVisible = false"
       @verification-success="handleVerificationSuccess"
       @verification-fail="handleVerificationFail"
     />
 
-    <div class="flex flex-col lg:flex-row gap-6 p-6 min-h-screen">
-      <div v-if="isLoading" class="w-full text-center text-lg font-semibold text-gray-600">Loading customer data...</div>
-      <div v-else-if="errorMessage" class="w-full text-center text-red-500 text-lg font-semibold p-4 bg-red-50 rounded-lg">{{ errorMessage }}</div>
+    <div class="flex flex-col lg:flex-row gap-8 p-6 lg:p-8 max-w-7xl mx-auto">
+      <div v-if="isLoading" class="w-full flex items-center justify-center h-96 text-lg font-semibold text-gray-600">Loading customer data...</div>
+      <div v-else-if="errorMessage" class="w-full text-center text-red-600 text-lg font-semibold p-6 bg-red-50 rounded-lg">{{ errorMessage }}</div>
       
       <template v-else>
-        <div class="flex-1 bg-white rounded-xl shadow p-6">
-          <div class="flex items-center gap-6 mb-6">
-            <img
-              v-if="user.face_image_url"
-              :src="user.face_image_url"
-              alt="Profile"
-              class="w-24 h-24 rounded-full object-cover border-2 border-gray-200"
-            />
-            <img
-              v-else
-              src="../assets/default-profile.png"
-              alt="Default Profile"
-              class="w-24 h-24 rounded-full object-cover border-2 border-gray-200"
-            />
-            
-            <div>
-              <h2 class="text-xl font-bold">{{ fullName }}</h2>
-              <p class="text-sm text-gray-600">{{ user.phone }}</p>
-              <p class="text-sm text-gray-600">{{ user.id }}</p>
-            </div>
+        <div class="flex-1 space-y-8">
+          <div class="bg-white rounded-2xl shadow-md p-6">
+            <div class="flex flex-col sm:flex-row items-center gap-6">
+              <img
+                v-if="user.face_image_url"
+                :src="user.face_image_url"
+                alt="Profile"
+                class="w-28 h-28 rounded-full object-cover ring-4 ring-white shadow-lg"
+              />
+              <div v-else class="w-28 h-28 rounded-full bg-gray-200 flex items-center justify-center ring-4 ring-white shadow-lg">
+                <span class="text-4xl text-gray-500">{{ user.name.charAt(0) }}{{ user.surname.charAt(0) }}</span>
+              </div>
+              
+              <div class="flex-grow text-center sm:text-left">
+                <h1 class="text-3xl font-bold text-gray-800">{{ fullName }}</h1>
+                <p class="text-md text-gray-500 mt-1">ID: {{ user.id }}</p>
 
-            <div class="ml-auto bg-gray-100 rounded-lg p-4 text-center">
-              <p class="text-sm text-gray-500 font-semibold">Account Balance</p>
-              <p class="text-2xl font-bold text-gray-800">{{ formattedBalance }} ฿</p>
+                <div class="mt-3 pt-3 border-t border-gray-100 space-y-1 text-sm text-gray-600">
+                  <p class="flex items-center justify-center sm:justify-start gap-2">
+                    <EnvelopeIcon class="h-4 w-4 text-gray-400" />
+                    <span>{{ user.email || 'No email provided' }}</span>
+                  </p>
+                  <p class="flex items-center justify-center sm:justify-start gap-2">
+                    <PhoneIcon class="h-4 w-4 text-gray-400" />
+                    <span>{{ user.phone || 'No phone provided' }}</span>
+                  </p>
+                  <p class="flex items-center justify-center sm:justify-start gap-2">
+                    <CakeIcon class="h-4 w-4 text-gray-400" />
+                    <span>Born on {{ formattedBirthDate }}</span>
+                  </p>
+                </div>
+              </div>
+
+              <div class="ml-auto bg-blue-50 rounded-xl p-4 text-center border border-blue-100">
+                <p class="text-sm text-blue-800 font-semibold">Account Balance</p>
+                <p class="text-3xl font-bold text-blue-900">{{ formattedBalance }} ฿</p>
+              </div>
             </div>
           </div>
 
-          <h3 class="text-lg font-semibold mb-3">Recent Transaction</h3>
-          <table class="w-full text-sm border">
-            <thead class="bg-gray-200">
-              <tr>
-                <th class="text-left p-2">Date</th>
-                <th class="text-left p-2">Description</th>
-                <th class="text-left p-2">Performed By</th>
-                <th class="text-right p-2">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-if="transactions.length === 0">
-                <td colspan="4" class="text-center p-4 text-gray-500">No transaction history found.</td>
-              </tr>
-              <tr v-for="tx in transactions" :key="tx.id" class="border-t">
-                <td class="p-2">{{ tx.date }}</td>
-                <td class="p-2">{{ tx.description }}</td>
-                <td class="p-2 text-gray-600">{{ tx.employeeName }}</td>
-                <td
-                  class="p-2 text-right font-semibold"
-                  :class="{
-                    'text-green-600': tx.amount > 0,
-                    'text-red-500': tx.amount < 0
-                  }"
-                >
-                  {{ formatAmount(tx.amount) }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          <div class="bg-white rounded-2xl shadow-md p-6">
+            <h3 class="text-xl font-semibold mb-4 text-gray-800">Transaction History</h3>
+            <div class="overflow-y-auto h-[50vh] pr-2">
+              <ul v-if="transactions.length > 0" class="space-y-4">
+                <li v-for="tx in transactions" :key="tx.id" class="flex items-center gap-4 p-3 rounded-lg hover:bg-gray-50">
+                  <div class="flex-shrink-0">
+                    <ArrowUpCircleIcon v-if="tx.amount > 0" class="h-8 w-8 text-green-500"/>
+                    <ArrowDownCircleIcon v-else class="h-8 w-8 text-red-500"/>
+                  </div>
+                  <div class="flex-grow">
+                    <p class="font-semibold text-gray-800">{{ tx.description }}</p>
+                    <p class="text-sm text-gray-500">
+                      By {{ tx.employeeName }} <span v-if="tx.note"> - {{ tx.note }}</span>
+                    </p>
+                  </div>
+                  <div class="text-right flex-shrink-0">
+                    <p
+                      class="text-lg font-semibold"
+                      :class="tx.amount > 0 ? 'text-green-600' : 'text-red-600'"
+                    >
+                      {{ formatAmount(tx.amount) }} ฿
+                    </p>
+                    <p class="text-sm text-gray-400">{{ tx.date }}</p>
+                  </div>
+                </li>
+              </ul>
+              <div v-else class="text-center py-10 text-gray-500">No transaction history found.</div>
+            </div>
+          </div>
         </div>
 
-        <div class="w-full lg:w-80 bg-white rounded-xl shadow p-6">
-          <div class="flex justify-between items-center mb-4">
-            <h3 class="text-lg font-bold">
-              {{ isDepositMode ? 'Deposit' : 'Withdrawal' }}
-            </h3>
+        <div class="w-full lg:w-96 bg-white rounded-2xl shadow-md p-6 h-fit">
+          <h3 class="text-xl font-bold text-gray-800 mb-4">New Transaction</h3>
+          
+          <div class="grid grid-cols-2 gap-2 mb-6">
             <button
-              @click="isDepositMode = !isDepositMode"
-              class="text-gray-600 text-lg hover:text-black transition"
-              title="Toggle Mode"
+              @click="isDepositMode = true"
+              :class="[
+                'py-3 rounded-lg font-semibold transition',
+                isDepositMode ? 'bg-green-600 text-white shadow' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              ]"
             >
-              ☰
+              Deposit
+            </button>
+            <button
+              @click="isDepositMode = false"
+              :class="[
+                'py-3 rounded-lg font-semibold transition',
+                !isDepositMode ? 'bg-red-500 text-white shadow' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              ]"
+            >
+              Withdrawal
             </button>
           </div>
 
           <form @submit.prevent="submitTransaction">
-            <label class="block text-sm mb-1">Amount</label>
-            <div class="flex items-center border rounded px-2 mb-4">
-              <span class="text-gray-500">฿</span>
+            <label for="amount" class="block text-sm font-medium text-gray-700 mb-1">Amount</label>
+            <div class="relative mb-4">
+              <span class="absolute inset-y-0 left-0 pl-4 flex items-center text-2xl text-gray-500">฿</span>
               <input
+                id="amount"
                 v-model="formattedAmount"
                 type="text"
                 inputmode="decimal"
                 placeholder="0.00"
-                class="flex-1 border-none outline-none p-2 text-right"
+                class="w-full border border-gray-300 rounded-lg p-3 pl-10 text-right text-2xl font-semibold text-gray-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
             </div>
 
-            <label class="block text-sm mb-1">Note</label>
+            <label for="note" class="block text-sm font-medium text-gray-700 mb-1">Note (Optional)</label>
             <textarea
+              id="note"
               v-model="transaction.note"
-              rows="3"
-              placeholder="Optional..."
-              class="w-full border rounded p-2 mb-4"
+              rows="4"
+              placeholder="e.g., Cash deposit"
+              class="w-full border border-gray-300 rounded-lg p-3 text-base focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             ></textarea>
 
             <button
               type="submit"
               :class="[
-                'w-full py-2 text-white rounded font-medium transition',
+                'w-full py-3 mt-4 text-white rounded-lg font-semibold text-lg transition flex items-center justify-center gap-2',
                 isDepositMode ? 'bg-green-600 hover:bg-green-700' : 'bg-red-500 hover:bg-red-600'
               ]"
             >
-              {{ isDepositMode ? 'Deposit' : 'Withdraw' }}
+              <ArrowUpCircleIcon v-if="isDepositMode" class="h-6 w-6"/>
+              <ArrowDownCircleIcon v-else class="h-6 w-6"/>
+              Submit {{ isDepositMode ? 'Deposit' : 'Withdrawal' }}
             </button>
           </form>
         </div>
@@ -326,6 +379,7 @@ export default defineComponent({
 </template>
 
 <style scoped>
+/* Hides the number input spinners in Webkit browsers */
 input[type="number"]::-webkit-outer-spin-button,
 input[type="number"]::-webkit-inner-spin-button {
   -webkit-appearance: none;
