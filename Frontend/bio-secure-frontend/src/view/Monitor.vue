@@ -227,7 +227,6 @@ export default {
       <div class="max-w-7xl mx-auto">
         <div class="mb-8">
           <h1 class="text-3xl font-bold text-gray-800">Monitoring Dashboard</h1>
-          <p class="text-gray-500 mt-1">Real-time overview of system activity and registrations.</p>
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
