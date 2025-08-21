@@ -16,7 +16,7 @@ import io
 import requests
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Form, UploadFile, File, HTTPException, BackgroundTasks, Body
+from fastapi import FastAPI, Form, UploadFile, File, HTTPException, BackgroundTasks, Body, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -569,17 +569,57 @@ async def get_registration_stats():
         raise HTTPException(status_code=500, detail=f"Failed to fetch registration stats: {e}")
 
 @app.get("/customer-logs")
-async def get_customer_logs():
+async def get_customer_logs(show_all: Optional[bool] = Query(False), period: Optional[str] = Query(None)):
     try:
-        response = supabase.table("CustomerLogs").select("*").order("Transaction_Timestamp", desc=True).limit(10).execute()
+        query = supabase.table("CustomerLogs").select("*").order("Transaction_Timestamp", desc=True)
+
+        # Handle time period filtering
+        if period:
+            now = datetime.datetime.now(datetime.timezone.utc)
+            start_date = None
+            if period == 'today':
+                start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            elif period == 'week':
+                start_date = now.replace(hour=0, minute=0, second=0, microsecond=0) - datetime.timedelta(days=now.weekday())
+            elif period == 'month':
+                start_date = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            
+            if start_date:
+                query = query.gte("Transaction_Timestamp", start_date.isoformat())
+        
+        # Handle default limit unless show_all is requested
+        elif not show_all:
+            query = query.limit(15)
+            
+        response = query.execute()
         return response.data or []
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch customer logs: {str(e)}")
 
 @app.get("/employee-logs")
-async def get_employee_logs():
+async def get_employee_logs(period: Optional[str] = Query(None)):
     try:
-        response = supabase.table("EmployeeLogs").select("*").order("Log_Timestamp", desc=True).limit(10).execute()
+        query = supabase.table("EmployeeLogs").select("*").order("Log_Timestamp", desc=True)
+
+        # Handle time period filtering
+        if period:
+            now = datetime.datetime.now(datetime.timezone.utc)
+            start_date = None
+            if period == 'today':
+                start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            elif period == 'week':
+                start_date = now.replace(hour=0, minute=0, second=0, microsecond=0) - datetime.timedelta(days=now.weekday())
+            elif period == 'month':
+                start_date = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            
+            if start_date:
+                # Filter using the 'Log_Timestamp' column
+                query = query.gte("Log_Timestamp", start_date.isoformat())
+        else:
+            # Default to the 10 most recent logs if no period is specified
+            query = query.limit(10)
+
+        response = query.execute()
         return response.data or []
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch employee logs: {str(e)}")
