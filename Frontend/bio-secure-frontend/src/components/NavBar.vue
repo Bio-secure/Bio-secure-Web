@@ -36,11 +36,11 @@ const handleLogout = () => {
       
       <div v-if="authState.isLoggedIn && !onLoginPage" class="hidden md:flex items-center space-x-6">
         <RouterLink
-          to="/monitor"
+          to="/register"
           class="text-gray-600 font-semibold hover:text-blue-600 transition-colors pb-1 border-b-2 border-transparent"
           active-class="!border-blue-600 !text-blue-600"
         >
-          Dashboard
+          Register Customer
         </RouterLink>
         <RouterLink
           to="/identify"
@@ -50,11 +50,11 @@ const handleLogout = () => {
           Transaction
         </RouterLink>
         <RouterLink
-          to="/register"
+          to="/monitor"
           class="text-gray-600 font-semibold hover:text-blue-600 transition-colors pb-1 border-b-2 border-transparent"
           active-class="!border-blue-600 !text-blue-600"
         >
-          Register Customer
+          Dashboard
         </RouterLink>
       </div>
       
