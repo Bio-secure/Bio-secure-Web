@@ -657,3 +657,12 @@ def update_customer(customer_id: int, customer: CustomerUpdate):
         raise HTTPException(status_code=404, detail="Customer not found")
 
     return {"message": "Customer updated successfully", "data": response.data}
+
+@app.delete("/customers/{customer_id}")
+def delete_customer(customer_id: int):
+    response = supabase.table("Customer").delete().eq("National_ID", customer_id).execute()
+    
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    
+    return {"message": "Customer deleted successfully"}

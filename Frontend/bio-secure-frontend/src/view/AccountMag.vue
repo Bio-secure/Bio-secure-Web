@@ -25,6 +25,9 @@ function handleUpdated(updatedCustomer: any) {
     customers.value[index] = updatedCustomer; // update table row
   }
 }
+function handleDeleted(id: number) {
+  customers.value = customers.value.filter(c => c.National_ID !== id);
+}
 
 onMounted(async () => {
   try {
@@ -103,6 +106,7 @@ onMounted(async () => {
                     :customer="selectedCustomer"
                     @close="closeUpdatePopup"
                     @updated="handleUpdated"
+                    @deleted="handleDeleted"
                 />
             </div>
         </div>

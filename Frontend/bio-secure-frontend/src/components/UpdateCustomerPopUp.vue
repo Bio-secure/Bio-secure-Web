@@ -32,6 +32,17 @@ export default {
         console.error(err);
         alert("Failed to update customer");
       }
+    },
+    async deleteCustomer() {
+      if (!confirm("Are you sure you want to delete this customer?")) return;
+      try {
+        await axios.delete(`http://localhost:8000/customers/${this.localCustomer.National_ID}`);
+        this.$emit("deleted", this.localCustomer.National_ID); // notify parent
+        this.$emit("close");
+      } catch (err) {
+        console.error(err);
+        alert("Failed to delete customer");
+      }
     }
   },
   watch: {
@@ -58,7 +69,21 @@ export default {
           <input v-model="localCustomer.SurName" placeholder="Last Name" class="border p-2 w-full mb-2"/>
           <input v-model="localCustomer.phone_no" placeholder="Phone" class="border p-2 w-full mb-2"/>
           <input v-model="localCustomer.Email" placeholder="Email" class="border p-2 w-full mb-2"/>
-          <button type="submit" class="bg-green-500 text-white px-4 py-2 rounded-lg">Update</button>
+          <div class="flex justify-between mt-4">
+            <!-- Update -->
+            <button type="submit" class="bg-green-500 text-white px-4 py-2 rounded-lg">
+              Update
+            </button>
+
+            <!-- Delete -->
+            <button 
+              type="button" 
+              @click="deleteCustomer"
+              class="bg-red-500 text-white px-4 py-2 rounded-lg"
+            >
+              Delete
+            </button>
+          </div>
         </form>
       </div>
     </div>
