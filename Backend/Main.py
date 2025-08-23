@@ -82,9 +82,14 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 app = FastAPI()
 
+origins = [
+    "http://localhost:5173", 
+    "http://127.0.0.1:5173", 
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -629,3 +634,26 @@ async def debug():
     response = supabase.table("Customer").select("*").limit(2).execute()
     print("DEBUG DATA:", response.data)
     return response.data
+
+## Supabase CRUD Utility Endpoints
+class CustomerUpdate(BaseModel):
+    Name: Optional[str] = None
+    SurName: Optional[str] = None
+    BirthDate: Optional[str] = None
+    phone_no: Optional[int] = None
+
+@app.put("/customers/{customer_id}")
+def update_customer(customer_id: int, customer: CustomerUpdate):
+    # Build update payload (only non-null fields)
+    update_data = {k: v for k, v in customer.model_dump().items() if v is not None}
+
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No data provided for update")
+
+    # Update customer in Supabase
+    response = supabase.table("Customer").update(update_data).eq("National_ID", customer_id).execute()
+
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    return {"message": "Customer updated successfully", "data": response.data}

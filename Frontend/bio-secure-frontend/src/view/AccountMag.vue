@@ -1,30 +1,46 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 import axios from "axios";
+import UpdateCustomerPopUp from "../components/UpdateCustomerPopUp.vue";
 
 const customers = ref<any[]>([]);
-const employees = ref<any[]>([])
+const employees = ref<any[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
 
+// popup state
+const showUpdatePopup = ref(false);
+const selectedCustomer = ref<any | null>(null);
+
+function openUpdatePopup(customer: any) {
+  selectedCustomer.value = { ...customer };
+  showUpdatePopup.value = true;
+}
+function closeUpdatePopup() {
+  showUpdatePopup.value = false;
+}
+function handleUpdated(updatedCustomer: any) {
+  const index = customers.value.findIndex(c => c.National_ID === updatedCustomer.National_ID);
+  if (index !== -1) {
+    customers.value[index] = updatedCustomer; // update table row
+  }
+}
+
 onMounted(async () => {
- // Fetch all customer
   try {
     const response = await axios.get("http://localhost:8000/customers");
     customers.value = response.data;
-    console.log(customers.value)
   } catch (err: any) {
     error.value = err.response?.data?.detail || "Failed to fetch customers";
   } finally {
     loading.value = false;
   }
 
- // Fetch all employees 
   try {
     const response = await axios.get("http://localhost:8000/employees");
-    employees.value = response.data
+    employees.value = response.data;
   } catch (err: any) {
-    error.value = err.response?.data?.detail || "Failed to fetch employees"
+    error.value = err.response?.data?.detail || "Failed to fetch employees";
   } finally {
     loading.value = false;
   }
@@ -55,6 +71,7 @@ onMounted(async () => {
                                 <th class="py-2 px-4 text-left">Last Name</th>
                                 <th class="py-2 px-4 text-left">Phone No.</th>
                                 <th class="py-2 px-4 text-left">Email</th>
+                                <th class="py-2 px-4 text-left">Edit</th>
                             </tr>
                     </thead>
                     <tbody>
@@ -68,9 +85,25 @@ onMounted(async () => {
                             <td class="py-2 px-4">{{ c.SurName }}</td>
                             <td class="py-2 px-4">{{ c.phone_no }}</td>
                             <td class="py-2 px-4">{{ c.Email }}</td>
+                            <td class="py-2 px-4">
+                                <button
+                                    @click="openUpdatePopup(c)"
+                                    class="text-blue-600 hover:text-blue-800"
+                                >
+                                    Edit
+                                </button>
+                            </td>
                         </tr>
                     </tbody>
                 </table>
+                <UpdateCustomerPopUp
+                    v-if="showUpdatePopup"
+                    :show="showUpdatePopup"
+                    title="Edit Customer"
+                    :customer="selectedCustomer"
+                    @close="closeUpdatePopup"
+                    @updated="handleUpdated"
+                />
             </div>
         </div>
       
