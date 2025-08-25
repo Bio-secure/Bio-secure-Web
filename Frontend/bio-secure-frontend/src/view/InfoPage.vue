@@ -227,7 +227,7 @@ export default defineComponent({
 </script>
 
 <template>
-  <div class="bg-slate-50 min-h-screen">
+  <div class="min-h-screen">
     <VerificationModal
       v-if="isVerificationModalVisible"
       :customer-id="String($route.params.id)" 

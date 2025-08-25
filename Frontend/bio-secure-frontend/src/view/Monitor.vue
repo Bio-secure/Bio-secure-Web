@@ -222,7 +222,7 @@ export default {
 </script>
 
 <template>
-  <div class="flex h-screen bg-slate-100 font-sans">
+  <div class="flex h-screen font-sans">
     <main class="flex-1 p-6 lg:p-8 overflow-y-auto">
       <div class="max-w-7xl mx-auto">
         <div class="mb-8">

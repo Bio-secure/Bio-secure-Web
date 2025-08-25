@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 import axios from "axios";
+// @ts-ignore
 import UpdateCustomerPopUp from "../components/UpdateCustomerPopUp.vue";
 
 const customers = ref<any[]>([]);
