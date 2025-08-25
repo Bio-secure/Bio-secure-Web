@@ -18,6 +18,8 @@ import ImageRegis from '../view/ImageRegis.vue'
 import AccountMag from '../view/AccountMag.vue'
 // @ts-ignore
 import RegisterBiometric from '../view/RegisterBiometric.vue'
+// @ts-ignore
+import IrisVerification from '../components/IrisVerification.vue'
 
 const routes = [
   {
@@ -65,6 +67,11 @@ const routes = [
     path: '/verify',
     name: 'image',
     component: ImageRegis
+  },
+  {
+    path: '/iris-verification',
+    name: 'IrisVerification',
+    component: IrisVerification
   },
   {
     path: '/register-biometric/:id', // The ':id' makes it a dynamic parameter

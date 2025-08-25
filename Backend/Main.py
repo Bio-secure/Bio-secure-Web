@@ -56,6 +56,10 @@ class IrisAuthResponse(BaseModel):
     best_similarity: float | None = None
     detail: str | None = None
 
+class VerifyPasswordRequest(BaseModel):
+    emId: int
+    password: str
+
 # Authentication thresholds
 FACE_DISTANCE_THRESHOLD = 0.50
 IRIS_AUTHENTICATION_THRESHOLD = 0.65
@@ -635,6 +639,21 @@ async def debug():
     print("DEBUG DATA:", response.data)
     return response.data
 
+@app.post("/verify-password")
+async def verify_password(payload: VerifyPasswordRequest):
+    response = supabase.table("Employees").select("EmPass").eq("EmID", payload.emId).single().execute()
+    
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    
+    hashed = response.data["EmPass"]
+    from passlib.context import CryptContext
+    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+    
+    if not pwd_context.verify(payload.password, hashed):
+        raise HTTPException(status_code=401, detail="Invalid password")
+    
+    return {"valid": True}
 ## Supabase CRUD Utility Endpoints
 class CustomerUpdate(BaseModel):
     Name: Optional[str] = None
