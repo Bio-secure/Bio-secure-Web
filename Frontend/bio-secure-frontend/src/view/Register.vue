@@ -92,7 +92,7 @@ async function handleRegisterUser() {
 </script>
 
 <template>
-  <div class="min-h-screen bg-slate-100 flex items-center justify-center p-4">
+  <div class="min-h-screen flex items-center justify-center p-4">
     <div class="max-w-2xl w-full bg-white p-8 rounded-2xl shadow-xl">
       <h1 class="text-3xl font-bold text-gray-800 text-center mb-2">Register New Customer</h1>
       <p class="text-center text-gray-500 mb-8">Follow the steps to create a new account.</p>

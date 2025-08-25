@@ -117,7 +117,7 @@ async function registerBiometrics() {
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-50 py-12 px-4 flex flex-col items-center space-y-8 font-sans">
+  <div class="min-h-screen py-12 px-4 flex flex-col items-center space-y-8 font-sans">
     <h1 class="text-4xl font-bold text-gray-800">Register Biometric Data</h1>
     <p class="text-lg text-gray-600 max-w-2xl text-center">Select an existing customer, upload their biometric images, and submit to create their identity record.</p>
 
