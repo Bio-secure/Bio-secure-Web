@@ -14,10 +14,7 @@ import { RouterView } from 'vue-router';
       <div class="h-full">
         <RouterView />
       </div>
-      
-      <main>
-        <RouterView />
-      </main>
+    
     </div>
   </div>
 </template>
