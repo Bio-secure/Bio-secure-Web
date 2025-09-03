@@ -38,12 +38,12 @@ def root():
     return {"message": "FastAPI is running!"}
 
 @app.post("/register-biometric")
-def register_biometric(
+async def register_biometric(
     national_id: str = Form(...),
     face_image: UploadFile = File(...),
     iris_image: UploadFile = File(None)
 ):
-    return register_biometric_service(national_id, face_image, iris_image)
+    return await register_biometric_service(national_id, face_image, iris_image)
     
 @app.post("/verify")
 async def verify_customer_identity(

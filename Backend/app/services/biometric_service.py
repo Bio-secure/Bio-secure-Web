@@ -21,6 +21,7 @@ async def process_face(national_id: str, name: str, face_image: UploadFile):
     filename = f"face/{national_id}_{name}.{ext}"
 
     try:
+        # Generate face embedding
         embedding_objs = await run_in_threadpool(
             DeepFace.represent,
             img_path=path,
@@ -31,18 +32,24 @@ async def process_face(national_id: str, name: str, face_image: UploadFile):
         if not embedding:
             raise HTTPException(status_code=400, detail="No face embedding generated.")
 
+        # Read file and upload to Supabase
         async with aiofiles.open(path, "rb") as f:
+            file_bytes = await f.read()
             await run_in_threadpool(
                 supabase.storage.from_(BIOMETRIC_BUCKET).upload,
-                f,
                 filename,
+                file_bytes,   
                 {"upsert": "true"}
             )
+
+        # Get public URL
         url = supabase.storage.from_(BIOMETRIC_BUCKET).get_public_url(filename)
         return url, embedding
+
     finally:
         if os.path.exists(path):
             os.remove(path)
+
 
 
 # --- Handle Iris ---
