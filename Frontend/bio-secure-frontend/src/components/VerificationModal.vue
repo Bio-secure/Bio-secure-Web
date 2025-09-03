@@ -172,7 +172,34 @@ const currentScannerState = computed(() => {
 
 // --- API CALL ---
 async function verifyIdentity() {
-    // ... function unchanged ...
+  isLoading.value = true;
+  errorMessage.value = '';
+  const formData = new FormData();
+  formData.append("customer_id", props.customerId);
+  if (selectedFaceFile.value) formData.append("face_image", selectedFaceFile.value);
+  if (props.verificationMode === 'full' && selectedIrisFile.value) {
+    formData.append("iris_image", selectedIrisFile.value);
+  }
+
+  try {
+    const res = await fetch(`${MAIN_BACKEND_URL}/verify`, { method: "POST", body: formData });
+    if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ message: 'Verification failed with status: ' + res.status }));
+        throw new Error(errorData.message || 'Verification request failed.');
+    }
+    const data = await res.json();
+    if (data.verified) {
+      emit('verification-success');
+    } else {
+      errorMessage.value = data.message || "Verification failed. Biometrics did not match.";
+      emit('verification-fail', errorMessage.value);
+    }
+  } catch (err) {
+    errorMessage.value = `Error: ${err.message}`;
+    emit('verification-fail', errorMessage.value);
+  } finally {
+    isLoading.value = false;
+  }
 }
 
 // --- LIFECYCLE HOOKS ---

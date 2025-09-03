@@ -46,13 +46,13 @@ def register_biometric(
     return register_biometric_service(national_id, face_image, iris_image)
     
 @app.post("/verify")
-def verify_customer_identity(
+async def verify_customer_identity(
     background_tasks: BackgroundTasks,
     face_image: UploadFile = File(None),
     iris_image: UploadFile = File(None),
     customer_id: int = Form(...)
 ):
-    return verify_customer_identity_service(customer_id, background_tasks, face_image, iris_image)
+    return await verify_customer_identity_service(customer_id, background_tasks, face_image, iris_image)
 
 @app.get("/customer-details/{customer_id}")
 def get_customer_details(customer_id: int):
