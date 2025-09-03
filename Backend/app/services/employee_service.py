@@ -27,33 +27,64 @@ def register_employee_service(employee_data: EmployeeCreate):
 
 
 def login_employee_service(employee_login_data: EmployeeLogin):
+    log_payload = {
+        "Employee_ID": employee_login_data.emId,
+        "EmResult": "Failure",
+        "EmName": "",
+        "EmSurName": "",
+        "Error": ""
+    }
+
     try:
-        response = supabase.table("Employees").select("EmID, EmPass, IsAdmin, EmName, EmSurName").eq("EmID", employee_login_data.emId).single().execute()
-        log_payload = {"Employee_ID": employee_login_data.emId, "EmResult": "Failure"}
+        # Step 1: Fetch employee
+        response = (
+            supabase.table("Employees")
+            .select("EmID, EmPass, IsAdmin, EmName, EmSurName")
+            .eq("EmID", employee_login_data.emId)
+            .single()
+            .execute()
+        )
 
+        # Case 1: Employee ID not found
         if not response.data:
+            log_payload["Error"] = "Employee ID not found"
             supabase.table("EmployeeLogs").insert(log_payload).execute()
-            raise HTTPException(status_code=401, detail="Invalid Employee ID or Password.")
-        
-        employee = response.data
-        log_payload["EmName"] = employee.get("EmName")
-        log_payload["EmSurName"] = employee.get("EmSurName")
+            raise HTTPException(status_code=404, detail="Employee ID not found.")
 
+        employee = response.data
+        log_payload["EmName"] = employee.get("EmName", "")
+        log_payload["EmSurName"] = employee.get("EmSurName", "")
+
+        # Case 2: Wrong password
         if not pwd_context.verify(employee_login_data.password, employee["EmPass"]):
+            log_payload["Error"] = "Incorrect password"
             supabase.table("EmployeeLogs").insert(log_payload).execute()
-            raise HTTPException(status_code=401, detail="Invalid Employee ID or Password.")
-        
+            raise HTTPException(status_code=401, detail="Incorrect password.")
+
+        # Case 3: Success
         log_payload["EmResult"] = "Success"
+        log_payload["Error"] = ""
         supabase.table("EmployeeLogs").insert(log_payload).execute()
-        
+
         return {
-            "success": True, "message": "Login successful!", "emId": employee["EmID"],
-            "isAdmin": employee["IsAdmin"], "name": employee["EmName"], "surname": employee["EmSurName"]
+            "success": True,
+            "message": "Login successful!",
+            "emId": employee["EmID"],
+            "isAdmin": employee["IsAdmin"],
+            "name": employee["EmName"],
+            "surname": employee["EmSurName"],
         }
+
+    except HTTPException:
+        raise  # re-raise known errors
     except Exception as e:
-        if 'log_payload' in locals():
+        log_payload["Error"] = str(e)
+        try:
             supabase.table("EmployeeLogs").insert(log_payload).execute()
-        raise HTTPException(status_code=500, detail=f"An unexpected error during login: {str(e)}")
+        except Exception:
+            pass  # avoid nested failure if logging fails
+        raise HTTPException(status_code=500, detail=f"Incorrect password or EmployeeID.")
+
 
 def verify_password_service(payload: VerifyPasswordRequest):
     response = supabase.table("Employees").select("EmPass").eq("EmID", payload.emId).single().execute()
