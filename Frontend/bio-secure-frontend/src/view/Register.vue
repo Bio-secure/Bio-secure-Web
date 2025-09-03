@@ -81,7 +81,7 @@ async function handleRegisterUser() {
     const newCustomerId = data.data[0].National_ID;
     if (newCustomerId) {
       alert("User details registered successfully! Now proceeding to biometric registration.");
-      router.push(`/register-biometric/${newCustomerId}`);
+      router.push(`/register-biometric-face/${newCustomerId}`);
     }
 
   } catch (err) {

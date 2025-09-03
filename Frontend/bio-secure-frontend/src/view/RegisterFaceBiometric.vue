@@ -8,25 +8,19 @@ const router = useRouter();
 
 const customerId = ref(route.params.id);
 const faceState = ref('idle');
-const irisState = ref('idle');
 const showFlash = ref(false);
 
 const selectedFaceFile = ref(null);
 const facePreview = ref(null);
-const selectedIrisFile = ref(null);
-const irisPreview = ref(null);
 
 const isLoading = ref(false);
 const errorMessage = ref('');
 
 let faceStream = null;
-let irisStream = null;
 const faceVideo = ref(null);
-const irisVideo = ref(null);
 
 const videoDevices = ref([]);
 const selectedFaceDeviceId = ref(''); // <-- NEW: State for selected face camera
-const selectedIrisDeviceId = ref('');
 
 // --- Webcam Functions ---
 
@@ -39,9 +33,6 @@ async function getVideoDevices() {
     // Set smart defaults if cameras are available
     if (videoDevices.value.length > 0) {
       selectedFaceDeviceId.value = videoDevices.value[0].deviceId;
-    }
-    if (videoDevices.value.length > 1) {
-      selectedIrisDeviceId.value = videoDevices.value[1].deviceId;
     }
   } catch (err) {
     console.error("Could not get video devices:", err);
@@ -77,8 +68,6 @@ async function startWebcam(type) {
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
     if (type === 'face') {
       faceStream = stream;
-    } else {
-      irisStream = stream;
     }
     videoEl.value.srcObject = stream;
   } catch (err) {
@@ -126,7 +115,6 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   stopStream(faceStream);
-  stopStream(irisStream);
 });
 
 // --- Submission Logic ---
@@ -142,20 +130,17 @@ async function submitBiometrics() {
   const formData = new FormData();
   formData.append('national_id', customerId.value);
   formData.append('face_image', selectedFaceFile.value);
-  if (selectedIrisFile.value) {
-    formData.append('iris_image', selectedIrisFile.value);
-  }
 
   try {
-    const res = await fetch('http://localhost:8000/register-biometric', {
+    const res = await fetch('http://localhost:8000/register-biometric-face', {
       method: 'POST',
       body: formData,
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Failed to submit biometrics.');
     
-    alert('Biometrics registered successfully!');
-    router.push(`/info/${customerId.value}`);
+    console.log('Biometrics registered successfully!');
+    router.push(`/register-biometric-iris/${customerId.value}`);
 
   } catch (err) {
     errorMessage.value = err.message;
@@ -173,7 +158,7 @@ async function submitBiometrics() {
         <p class="text-lg text-gray-600 mt-2 mb-8">Select a camera and provide a clear photo for each biometric type.</p>
       </div>
       
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-8 bg-white p-8 rounded-2xl shadow-xl">
+      <div class="grid grid-cols-1 gap-8 bg-white p-8 rounded-2xl shadow-xl">
         
         <div class="flex flex-col items-center">
           <h3 class="font-semibold text-gray-700 mb-3 text-xl">Face Scan</h3>
@@ -207,36 +192,6 @@ async function submitBiometrics() {
             <button v-if="faceState === 'captured'" @click="startWebcam('face')" class="w-full bg-gray-200 text-gray-700 px-5 py-2 rounded-lg font-semibold hover:bg-gray-300 transition">Retake Photo</button>
           </div>
         </div>
-
-        <div class="flex flex-col items-center">
-          <h3 class="font-semibold text-gray-700 mb-3 text-xl">Iris Scan</h3>
-          
-          <div class="mb-3 w-full max-w-xs">
-            <label for="iris-camera" class="block text-sm font-medium text-gray-700">Select Camera</label>
-            <select id="iris-camera" v-model="selectedIrisDeviceId" class="mt-1 block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm">
-              <option disabled value="">Please select a camera</option>
-              <option v-for="device in videoDevices" :key="device.deviceId" :value="device.deviceId">
-                {{ device.label || `Camera ${videoDevices.indexOf(device) + 1}` }}
-              </option>
-            </select>
-          </div>
-          
-          <div class="relative w-80 h-80">
-            <div class="relative w-full h-full bg-gray-200 rounded-full overflow-hidden border-4 border-white shadow-inner flex items-center justify-center">
-              <div v-if="irisState === 'idle'" class="text-center text-gray-500"><p>Camera is off</p></div>
-              <video v-show="irisState === 'streaming'" ref="irisVideo" autoplay playsinline class="w-full h-full object-cover transform -scale-x-100"></video>
-              <img v-if="irisState === 'captured'" :src="irisPreview" class="w-full h-full object-cover">
-               <div v-if="irisState === 'captured'" class="absolute inset-0 bg-green-500 bg-opacity-30 rounded-full flex items-center justify-center"><CheckCircleIcon class="w-24 h-24 text-white opacity-90" /></div>
-            </div>
-          </div>
-          <div class="flex flex-col items-center gap-2 mt-6 w-full max-w-xs">
-            <p v-if="irisState === 'captured'" class="text-green-600 font-semibold mb-2">Iris Captured!</p>
-            <button v-if="irisState === 'idle'" @click="startWebcam('iris')" :disabled="!selectedIrisDeviceId" class="w-full bg-blue-600 text-white px-5 py-3 rounded-lg font-bold text-lg hover:bg-blue-700 transition shadow-md disabled:bg-gray-400">Start Iris Camera</button>
-            <button v-if="irisState === 'streaming'" @click="capturePhoto('iris')" class="w-full bg-blue-600 text-white px-5 py-3 rounded-lg font-bold text-lg hover:bg-blue-700 transition shadow-md">Capture Iris</button>
-            <button v-if="irisState === 'captured'" @click="startWebcam('iris')" class="w-full bg-gray-200 text-gray-700 px-5 py-2 rounded-lg font-semibold hover:bg-gray-300 transition">Retake Photo</button>
-          </div>
-        </div>
-
       </div>
 
       <p v-if="errorMessage" class="text-red-600 bg-red-100 text-center p-3 rounded-lg mt-6 text-sm">{{ errorMessage }}</p>

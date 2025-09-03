@@ -8,7 +8,7 @@ from configs.settings import supabase
 from models.customer_model import CustomerUpdate
 from models.employee_models import EmployeeCreate, EmployeeLogin, VerifyPasswordRequest
 from models.transaction_models import TransactionCreate
-from services.biometric_service import register_biometric_service
+from services.biometric_service import register_biometric_face_service, register_biometric_iris_service
 from services.customer_service import delete_customer_service, get_customer_details_service, list_customers_service, update_customer_service
 from services.employee_service import list_employees_service, login_employee_service, register_employee_service, verify_password_service
 from services.report_service import get_customer_logs_service, get_employee_logs_service, get_registration_records_service, get_registration_stats_service
@@ -37,13 +37,20 @@ app.add_middleware(
 def root():
     return {"message": "FastAPI is running!"}
 
-@app.post("/register-biometric")
-async def register_biometric(
+@app.post("/register-biometric-face")
+async def register_face_biometric(
     national_id: str = Form(...),
-    face_image: UploadFile = File(...),
-    iris_image: UploadFile = File(None)
+    face_image: UploadFile = File(...)
 ):
-    return await register_biometric_service(national_id, face_image, iris_image)
+    return await register_biometric_face_service(national_id, face_image)
+
+@app.post("/register-biometric-iris")
+async def register_iris_biometric(
+    national_id: str = Form(...),
+    left_image: UploadFile = File(...),
+    right_image: UploadFile = File(...)
+):
+    return await register_biometric_iris_service(national_id, left_image, right_image)
     
 @app.post("/verify")
 async def verify_customer_identity(
@@ -116,5 +123,5 @@ async def update_customer(customer_id: int, customer: CustomerUpdate):
     return await update_customer_service(customer_id, customer)
 
 @app.delete("/customers/{customer_id}")
-async def delete_customer(customer_id: int):
-    return await delete_customer_service(customer_id) 
+def delete_customer(customer_id: int):
+    return delete_customer_service(customer_id) 

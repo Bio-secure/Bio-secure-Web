@@ -1,25 +1,37 @@
-import json
-from fastapi import HTTPException
-import requests
+import cv2
+import numpy as np
+from iris_model.IrisRecognition.src.utils.imgutils import segment, normalize  # <-- code you pasted
+from scipy.spatial.distance import hamming
 
-from configs.settings import IRIS_MODEL_API_URL
+def extract_iris_features(image_path: str):
+    """
+    Full pipeline: segment, normalize, and extract iris template.
+    """
+    img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+    if img is None:
+        raise ValueError("Failed to load image.")
 
+    # Step 1: Segment iris
+    ciriris, cirpupil, imwithnoise = segment(img)
 
-def authenticate_iris_from_api(user_id: str, image_data_b64: str) -> dict:
-    headers = {"Content-Type": "application/json"}
-    payload = {"user_id": user_id, "image_data": image_data_b64}
-    response = None
-    try:
-        response = requests.post(f"{IRIS_MODEL_API_URL}/authenticate-iris", headers=headers, json=payload)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        print(f"Error calling Iris Model API's /authenticate-iris: {e}")
-        if response is not None and response.text:
-            try:
-                error_detail = response.json().get("detail", response.text)
-            except json.JSONDecodeError:
-                error_detail = response.text
-            raise HTTPException(status_code=response.status_code, detail=f"Iris API error: {error_detail}")
-        else:
-            raise HTTPException(status_code=500, detail=f"Failed to communicate with Iris API: {e}")
+    # Step 2: Normalize iris (unwrap into polar array)
+    polar_array, noise = normalize(
+        img,
+        ciriris[1], ciriris[0], ciriris[2],  # iris x,y,r
+        cirpupil[1], cirpupil[0], cirpupil[2],  # pupil x,y,r
+        radpixels=64,
+        angulardiv=256
+    )
+
+    # Step 3: Flatten as feature vector (basic placeholder)
+    features = polar_array.flatten().tolist()
+    return features
+
+def match_iris(features1, features2, threshold=0.35):
+    """
+    Compare two iris templates with Hamming distance.
+    """
+    # convert to numpy arrays
+    arr1, arr2 = np.array(features1), np.array(features2)
+    dist = hamming(arr1, arr2)
+    return {"distance": float(dist), "is_match": dist < threshold}

@@ -1,9 +1,11 @@
 import aiofiles, os, json, base64, shutil, traceback, httpx
 from fastapi import HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
+import httpx
 
+from services.iris_service import extract_iris_features
 from utils.fetch_customer import fetch_customer_name
-from configs.settings import supabase, DeepFace, BIOMETRIC_BUCKET, IRIS_MODEL_API_URL
+from configs.settings import supabase, DeepFace, BIOMETRIC_BUCKET, IRIS_MODEL_API_URL, SUPABASE_URL
 
 # --- Utility: async save file ---
 async def save_file_temp(upload: UploadFile, suffix: str):
@@ -17,76 +19,131 @@ async def save_file_temp(upload: UploadFile, suffix: str):
 
 # --- Handle Face ---
 async def process_face(national_id: str, name: str, face_image: UploadFile):
-    path, ext = await save_file_temp(face_image, f"{national_id}_face")
-    filename = f"face/{national_id}_{name}.{ext}"
-
+    """
+    Processes a face image, generates an embedding, and uploads it to Supabase.
+    """
+    # 1. Save the uploaded file to a temporary location
+    file_extension = face_image.filename.split('.')[-1]
+    temp_filepath = os.path.join(TEMP_DIR, f"{national_id}_face.{file_extension}")
+    
     try:
-        # Generate face embedding
+        # Use aiofiles to asynchronously write the file to disk
+        async with aiofiles.open(temp_filepath, 'wb') as f:
+            while chunk := await face_image.read(1024):
+                await f.write(chunk)
+    except Exception as e:
+        print(f"Error saving temp file: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save image file.")
+
+    # 2. Generate face embedding using DeepFace (CPU-bound)
+    try:
         embedding_objs = await run_in_threadpool(
             DeepFace.represent,
-            img_path=path,
+            img_path=temp_filepath,
             model_name="VGG-Face",
             enforce_detection=False
         )
+        if not embedding_objs or not embedding_objs[0].get("embedding"):
+            raise ValueError("No face embedding generated.")
+        
         embedding = embedding_objs[0].get("embedding")
-        if not embedding:
-            raise HTTPException(status_code=400, detail="No face embedding generated.")
+    except Exception as e:
+        print(f"DeepFace processing failed: {e}")
+        raise HTTPException(status_code=400, detail=f"Failed to process face image: {e}")
 
-        # Read file and upload to Supabase
-        async with aiofiles.open(path, "rb") as f:
-            file_bytes = await f.read()
+    # 3. Upload the image to Supabase and get the public URL
+    # We will upload the image using a robust, atomic approach.
+    file_path_in_bucket = f"face/{national_id}_{name}.{file_extension}"
+    
+    try:
+        # Uploading/Updating a file is an I/O operation, so wrap it in run_in_threadpool
+        # Use the `update` method for upsert functionality (creating or overwriting)
+        with open(temp_filepath, 'rb') as f:
             await run_in_threadpool(
-                supabase.storage.from_(BIOMETRIC_BUCKET).upload,
-                filename,
-                file_bytes,   
-                {"upsert": "true"}
+                supabase.storage.from_(BIOMETRIC_BUCKET).update,
+                file_path_in_bucket,
+                f.read(),
+                {"upsert": "true", "content-type": face_image.content_type}
             )
 
-        # Get public URL
-        url = supabase.storage.from_(BIOMETRIC_BUCKET).get_public_url(filename)
-        return url, embedding
-
+        # 4. Get the public URL for the uploaded file
+        # This call is synchronous and does not require run_in_threadpool
+        url = supabase.storage.from_(BIOMETRIC_BUCKET).get_public_url(file_path_in_bucket)
+    
+    except Exception as e:
+        print(f"Supabase upload failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to upload image to storage.")
     finally:
-        if os.path.exists(path):
-            os.remove(path)
+        # 5. Clean up the temporary file
+        if os.path.exists(temp_filepath):
+            os.remove(temp_filepath)
+
+    return url, embedding
 
 
 
 # --- Handle Iris ---
-async def process_iris(national_id: str, name: str, iris_image: UploadFile):
-    path, ext = await save_file_temp(iris_image, f"{national_id}_iris")
-    filename = f"iris/{national_id}_{name}.{ext}"
-
+# --- Process a single iris (left or right) ---
+async def process_single_iris(national_id: str, name: str, image: UploadFile, eye_type: str):
     try:
-        async with aiofiles.open(path, "rb") as f:
-            b64 = base64.b64encode(await f.read()).decode()
+        # Save file temporarily
+        ext = image.filename.split('.')[-1]
+        filename = f"{national_id}_{name}_{eye_type}.{ext}"
+        path = f"temp_{filename}"
 
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{IRIS_MODEL_API_URL}/get-iris-embedding",
-                json={"image_data": b64},
-                timeout=30.0
+        async with aiofiles.open(path, "wb") as f:
+            content = await image.read()
+            await f.write(content)
+
+        # Step 1: Extract embedding locally
+        try:
+            embedding = await run_in_threadpool(extract_iris_features, path)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Iris feature extraction failed: {e}")
+
+        # Step 2: Upload to Supabase
+        try:
+            async with aiofiles.open(path, "rb") as f:
+                file_bytes = await f.read()
+
+            supabase.storage.from_(BIOMETRIC_BUCKET).upload(
+                file=file_bytes,
+                path=f"iris/{filename}",
+                file_options={"content-type": image.content_type, "upsert": "true"}
             )
-            response.raise_for_status()
-            iris_data = response.json()
-            embedding = iris_data.get("embedding")
-            if not embedding:
-                raise HTTPException(status_code=400, detail="No iris embedding returned.")
 
-        async with aiofiles.open(path, "rb") as f:
-            await run_in_threadpool(
-                supabase.storage.from_(BIOMETRIC_BUCKET).upload,
-                f,
-                filename,
-                {"upsert": "true"}
-            )
-        url = supabase.storage.from_(BIOMETRIC_BUCKET).get_public_url(filename)
-        return url, embedding
-    finally:
-        if os.path.exists(path):
-            os.remove(path)
+            image_url = supabase.storage.from_(BIOMETRIC_BUCKET).get_public_url(f"iris/{filename}")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Supabase upload failed: {e}")
+        finally:
+            if os.path.exists(path):
+                os.remove(path)
 
-async def register_biometric_service(national_id: str, face_image: UploadFile, iris_image: UploadFile = None):
+        return image_url, embedding
+
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Iris processing failed: {e}")
+
+
+# --- Main function to process left and right iris ---
+async def process_iris(national_id: str, name: str, left_iris_image: UploadFile = None, right_iris_image: UploadFile = None):
+    left_url, left_embedding = None, None
+    right_url, right_embedding = None, None
+
+    if left_iris_image:
+        left_url, left_embedding = await process_single_iris(national_id, name, left_iris_image, "left")
+
+    if right_iris_image:
+        right_url, right_embedding = await process_single_iris(national_id, name, right_iris_image, "right")
+
+    return {
+        "left_iris": {"url": left_url, "embedding": left_embedding},
+        "right_iris": {"url": right_url, "embedding": right_embedding}
+    }
+
+# Register Face Biometric
+async def register_biometric_face_service(national_id: str, face_image: UploadFile):
     if not DeepFace:
         raise HTTPException(status_code=503, detail="Face recognition unavailable.")
 
@@ -95,16 +152,10 @@ async def register_biometric_service(national_id: str, face_image: UploadFile, i
 
     face_url, face_embedding = await process_face(national_id, sanitized_name, face_image)
 
-    iris_url, iris_embedding = (None, None)
-    if iris_image:
-        iris_url, iris_embedding = await process_iris(national_id, sanitized_name, iris_image)
-
     payload = {
         "National_ID": int(national_id),
         "face_image_url": face_url,
-        "face_embedding": json.dumps(face_embedding),
-        "iris_image_url": iris_url,
-        "iris_embedding": json.dumps(iris_embedding) if iris_embedding else None,
+        "face_embedding": json.dumps(face_embedding)
     }
 
     try:
@@ -112,6 +163,33 @@ async def register_biometric_service(national_id: str, face_image: UploadFile, i
             supabase.table("Biometric").upsert(payload, on_conflict="National_ID").execute
         )
         return {"message": f"Biometric data registered successfully for ID {national_id}."}
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"DB insert failed: {e}")
+
+# Register Iris Biometric
+async def register_biometric_iris_service(national_id: str, left_image: UploadFile, right_image: UploadFile):
+    first, last = await fetch_customer_name(national_id)
+    sanitized_name = f"{first}_{last}".replace(" ", "_")
+
+    # Step 1: Process both iris images and get their data
+    iris_data = await process_iris(national_id, sanitized_name, left_image, right_image)
+
+    # Step 2: Prepare the payload with iris data
+    payload = {
+        "National_ID": int(national_id),
+        "iris_left_image_url": iris_data["left_iris"]["url"],
+        "iris_left_embedding": json.dumps(iris_data["left_iris"]["embedding"]) if iris_data["left_iris"]["embedding"] else None,
+        "iris_right_image_url": iris_data["right_iris"]["url"],
+        "iris_right_embedding": json.dumps(iris_data["right_iris"]["embedding"]) if iris_data["right_iris"]["embedding"] else None,
+    }
+
+    # Step 3: Upsert the data to Supabase
+    try:
+        await run_in_threadpool(
+            supabase.table("Biometric").upsert(payload, on_conflict="National_ID").execute
+        )
+        return {"message": f"Biometric iris data registered successfully for ID {national_id}."}
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"DB insert failed: {e}")

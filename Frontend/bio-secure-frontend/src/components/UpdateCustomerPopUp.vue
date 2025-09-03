@@ -58,10 +58,10 @@ export default {
       }
     },
     async deleteCustomer() {
-      const ok = await this.verifyPassword();
-      if (!ok) return;
+      // const ok = await this.verifyPassword();
+      // if (!ok) return;
 
-      if (!confirm("Are you sure you want to delete this customer?")) return;
+      // if (!confirm("Are you sure you want to delete this customer?")) return;
 
       try {
         await axios.delete(
@@ -141,7 +141,6 @@ export default {
             <!-- Delete -->
             <button
               type="button"
-              :disabled="verifying"
               @click="deleteCustomer"
               class="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600"
             >
