@@ -28,7 +28,7 @@ mock_httpx_async_client_cls.return_value.__aenter__.return_value = mock_httpx_as
 mock_httpx_async_client_instance.post.return_value.__aenter__.return_value.json.return_value = {"embedding": [0.5]*128}
 mock_httpx_async_client_instance.post.return_value.__aenter__.return_value.raise_for_status.return_value = None
 
-from Main import app, HTTPException, BackgroundTasks, authenticate_iris_from_api
+from Backend.app.Main import app, HTTPException, BackgroundTasks, authenticate_iris_from_api
 
 
 def create_supabase_execute_response_obj(data=None, error=None, count=None, status_code=200):

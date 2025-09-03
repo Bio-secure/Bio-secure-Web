@@ -11,10 +11,6 @@ import { RouterView } from 'vue-router';
       <header>
         <NavBar />
       </header>
-      <div class="h-full">
-        <RouterView />
-      </div>
-      
       <main>
         <RouterView />
       </main>
