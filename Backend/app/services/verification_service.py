@@ -106,11 +106,12 @@ async def verify_customer_identity_service(
 
 async def verify_face(customer_id: int, face_image: UploadFile):
     if not face_image:
-        return False, {}
+        return {"is_authenticated": False, "details": {}}
+
     path = await save_temp_file(face_image, f"{customer_id}_face")
     try:
-        details = await authenticate_face_from_api(customer_id, path)
-        return details.get("is_authenticated", False), details
+        details = await authenticate_face_from_api(customer_id, path) or {}
+        return {"is_authenticated": details.get("is_authenticated", False), "details": details}
     finally:
         if os.path.exists(path):
             os.remove(path)
