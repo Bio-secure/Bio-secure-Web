@@ -27,16 +27,8 @@ def register_employee_service(employee_data: EmployeeCreate):
 
 
 def login_employee_service(employee_login_data: EmployeeLogin):
-    log_payload = {
-        "Employee_ID": employee_login_data.emId,
-        "EmResult": "Failure",
-        "EmName": "",
-        "EmSurName": "",
-        "Error": ""
-    }
-
     try:
-        # Step 1: Fetch employee
+        # Query by Employee ID
         response = (
             supabase.table("Employees")
             .select("EmID, EmPass, IsAdmin, EmName, EmSurName")
@@ -45,6 +37,11 @@ def login_employee_service(employee_login_data: EmployeeLogin):
             .execute()
         )
 
+        log_payload = {
+            "Employee_ID": employee_login_data.emId,
+            "EmResult": "Failure"
+        }
+
         # Case 1: Employee ID not found
         if not response.data:
             log_payload["Error"] = "Employee ID not found"
@@ -52,18 +49,17 @@ def login_employee_service(employee_login_data: EmployeeLogin):
             raise HTTPException(status_code=404, detail="Employee ID not found.")
 
         employee = response.data
-        log_payload["EmName"] = employee.get("EmName", "")
-        log_payload["EmSurName"] = employee.get("EmSurName", "")
+        log_payload["EmName"] = employee.get("EmName")
+        log_payload["EmSurName"] = employee.get("EmSurName")
 
         # Case 2: Wrong password
         if not pwd_context.verify(employee_login_data.password, employee["EmPass"]):
-            log_payload["Error"] = "Incorrect password"
+            log_payload["Error"] = "Wrong password"
             supabase.table("EmployeeLogs").insert(log_payload).execute()
             raise HTTPException(status_code=401, detail="Incorrect password.")
 
         # Case 3: Success
         log_payload["EmResult"] = "Success"
-        log_payload["Error"] = ""
         supabase.table("EmployeeLogs").insert(log_payload).execute()
 
         return {
@@ -76,14 +72,12 @@ def login_employee_service(employee_login_data: EmployeeLogin):
         }
 
     except HTTPException:
-        raise  # re-raise known errors
+        raise  # re-raise clean HTTP errors
     except Exception as e:
-        log_payload["Error"] = str(e)
-        try:
+        if 'log_payload' in locals():
+            log_payload["Error"] = str(e)
             supabase.table("EmployeeLogs").insert(log_payload).execute()
-        except Exception:
-            pass  # avoid nested failure if logging fails
-        raise HTTPException(status_code=500, detail=f"Incorrect password or EmployeeID.")
+        raise HTTPException(status_code=500, detail=f"Unexpected error during login: {str(e)}")
 
 
 def verify_password_service(payload: VerifyPasswordRequest):
