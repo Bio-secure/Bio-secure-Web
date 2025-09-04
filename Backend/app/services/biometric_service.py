@@ -24,7 +24,7 @@ async def process_face(national_id: str, name: str, face_image: UploadFile):
     """
     # 1. Save the uploaded file to a temporary location
     file_extension = face_image.filename.split('.')[-1]
-    temp_filepath = os.path.join(TEMP_DIR, f"{national_id}_face.{file_extension}")
+    temp_filepath = os.path.join(f"{national_id}_face.{file_extension}")
     
     try:
         # Use aiofiles to asynchronously write the file to disk
@@ -97,7 +97,8 @@ async def process_single_iris(national_id: str, name: str, image: UploadFile, ey
 
         # Step 1: Extract embedding locally
         try:
-            embedding = await run_in_threadpool(extract_iris_features, path)
+            code, mask = await run_in_threadpool(extract_iris_features, path)
+            embedding = {"code": code.tolist(), "mask": mask.tolist()}
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Iris feature extraction failed: {e}")
 

@@ -229,8 +229,8 @@ export default defineComponent({
 <template>
   <div class="min-h-screen">
     <VerificationModal
-      v-if="isVerificationModalVisible"
-      :customer-id="String($route.params.id)" 
+      :is-open="isVerificationModalVisible"
+      :customer-id="user.id" 
       :verification-mode="verificationModeRequired"
       @close="isVerificationModalVisible = false"
       @verification-success="handleVerificationSuccess"
@@ -318,6 +318,7 @@ export default defineComponent({
           
           <div class="grid grid-cols-2 gap-2 mb-6">
             <button
+              type="button"
               @click="isDepositMode = true"
               :class="[
                 'py-3 rounded-lg font-semibold transition',
@@ -326,7 +327,9 @@ export default defineComponent({
             >
               Deposit
             </button>
+
             <button
+              type="button"
               @click="isDepositMode = false"
               :class="[
                 'py-3 rounded-lg font-semibold transition',

@@ -1,3 +1,4 @@
+from fastapi import HTTPException
 from typing import Optional
 from fastapi import FastAPI, Form, UploadFile, File, BackgroundTasks, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -54,12 +55,24 @@ async def register_iris_biometric(
     
 @app.post("/verify")
 async def verify_customer_identity(
-    background_tasks: BackgroundTasks,
+    national_id: str = Form(...),
+    background_tasks: BackgroundTasks = None,
     face_image: UploadFile = File(None),
-    iris_image: UploadFile = File(None),
-    customer_id: int = Form(...)
+    left_image: UploadFile = File(None),
+    right_image: UploadFile = File(None)
 ):
-    return await verify_customer_identity_service(customer_id, background_tasks, face_image, iris_image)
+    try:
+        return await verify_customer_identity_service(
+            national_id=national_id,
+            background_tasks=background_tasks,
+            face_image=face_image,
+            left_iris_image=left_image,
+            right_iris_image=right_image
+        )
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
 
 @app.get("/customer-details/{customer_id}")
 def get_customer_details(customer_id: int):
