@@ -1,11 +1,20 @@
 <script setup>
 import { ref, computed, onBeforeUnmount,watch } from "vue";
+import { CheckCircleIcon } from '@heroicons/vue/24/solid';
 
 const currentStep = ref(1);
 
 function nextStep() {
-  currentStep.value = 2;
+  if (props.verificationMode === "face") {
+    // Directly verify after face
+    verifyIdentity();
+  } else {
+    // Continue to iris step
+    currentStep.value = 2;
+  }
 }
+
+const showFlash = ref(false);
 
 // --- Props & Emits ---
 const props = defineProps({
@@ -76,6 +85,10 @@ function captureFace() {
       });
       facePreview.value = URL.createObjectURL(blob);
       faceState.value = "captured";
+
+      showFlash.value = true;
+      setTimeout(() => (showFlash.value = false), 150);
+
       stopStream(faceStream.value);
     },
     "image/jpeg"
@@ -150,11 +163,9 @@ async function verifyIdentity() {
   formData.append("national_id", props.customerId);
   formData.append("face_image", selectedFaceFile.value);
 
-  if (lFile.value) {
-    formData.append("left_image", lFile.value);
-  }
-  if (rFile.value) {
-    formData.append("right_image", rFile.value);
+  if (props.verificationMode === "full") {
+    if (lFile.value) formData.append("left_image", lFile.value);
+    if (rFile.value) formData.append("right_image", rFile.value);
   }
 
   try {
@@ -238,55 +249,48 @@ onBeforeUnmount(() => {
       <h2 class="text-xl font-bold mb-4">Identity Verification</h2>
 
       <!-- FACE STEP -->
-      <div v-if="currentStep === 1" class="mb-6">
-        <h3 class="font-semibold mb-2">Step 1: Face Scan</h3>
-        <div
-          class="w-full aspect-square bg-gray-200 flex items-center justify-center rounded-lg overflow-hidden"
-        >
-          <video
-            ref="faceVideo"
-            autoplay
-            playsinline
-            v-show="faceState === 'streaming'"
-            class="w-full h-full"
-          ></video>
-          <img
-            v-if="faceState === 'captured'"
-            :src="facePreview"
-            class="w-full h-full object-cover"
-          />
-          <p v-if="faceState === 'idle'" class="text-gray-500">
-            Camera is off
-          </p>
-        </div>
+      <div class="grid grid-cols-1 gap-8 bg-white p-8 rounded-2xl shadow-xl">
+        
+        <div class="flex flex-col items-center">
+          <h3 class="font-semibold text-gray-700 mb-3 text-xl">Face Scan</h3>
 
-        <div class="mt-3 flex gap-2">
-          <button
-            v-if="faceState === 'idle'"
-            @click="startFaceWebcam"
-            class="btn"
-          >
-            Start Camera
-          </button>
-          <button
-            v-if="faceState === 'streaming'"
-            @click="captureFace"
-            class="btn btn-green"
-          >
-            Capture Face
-          </button>
+          <div class="relative w-80 h-80">
+            <div class="relative w-full h-full bg-gray-200 rounded-full overflow-hidden border-4 border-white shadow-inner flex items-center justify-center">
+              <div v-if="faceState === 'idle'" class="absolute inset-0 flex items-center justify-center text-gray-500 text-center"><p>Camera is off</p></div>
+              <video ref="faceVideo" autoplay playsinline class="w-full h-full object-cover transform -scale-x-100"></video>
+              <img v-if="faceState === 'captured'" :src="facePreview" class="w-full h-full object-cover">
+            </div>
+            <div v-if="faceState === 'streaming'" class="absolute inset-0 pointer-events-none"><svg class="w-full h-full" viewBox="0 0 100 100"><defs><mask id="faceMask"><rect width="100" height="100" fill="white"></rect><ellipse cx="50" cy="48" rx="28" ry="38" fill="black"></ellipse></mask></defs><rect width="100" height="100" fill="rgba(255, 255, 255, 0.6)" mask="url(#faceMask)"></rect></svg></div>
+            <div v-if="faceState === 'captured'" class="absolute inset-0 bg-green-500 bg-opacity-30 rounded-full flex items-center justify-center"><CheckCircleIcon class="w-24 h-24 text-white opacity-90" /></div>
+            <transition enter-active-class="ease-out duration-150" enter-from-class="opacity-0" enter-to-class="opacity-100" leave-active-class="ease-in duration-150" leave-from-class="opacity-100" leave-to-class="opacity-0">
+              <div v-if="showFlash" class="absolute inset-0 bg-white"></div>
+            </transition>
+          </div>
+          <div class="flex flex-col items-center gap-2 mt-6 w-full max-w-xs">
+            <p v-if="faceState === 'captured'" class="text-green-600 font-semibold mb-2">Face Captured!</p>
+            <button
+              v-if="faceState === 'idle'"
+              @click="startFaceWebcam()"
+              class="w-full bg-blue-600 text-white px-5 py-3 rounded-lg font-bold text-lg hover:bg-blue-700 transition shadow-md"
+            >
+              Start Camera
+            </button>
+            <button v-if="faceState === 'streaming'" @click="captureFace" class="w-full bg-blue-600 text-white px-5 py-3 rounded-lg font-bold text-lg hover:bg-blue-700 transition shadow-md">Capture Face</button>
+            <button v-if="faceState === 'captured'" @click="startWebcam('face')" class="w-full bg-gray-200 text-gray-700 px-5 py-2 rounded-lg font-semibold hover:bg-gray-300 transition">Retake Photo</button>
+          </div>
           <button
             v-if="faceState === 'captured'"
-            @click="nextStep"
-            class="btn btn-blue"
+            @click="verifyIdentity"
+            :disabled="isLoading"
+            class="btn bg-blue-600 hover:bg-green-600 px-2 py-3 text-white rounded-lg font-bold mt-4 w-[50%]"
           >
-            Continue
+            {{ isLoading ? "Verifying..." : "Verify" }}
           </button>
         </div>
       </div>
 
       <!-- IRIS STEP -->
-      <div v-if="currentStep === 2" class="mb-6">
+      <div v-if="verificationMode === 'full' && currentStep === 2" class="mb-6">
         <h3 class="font-semibold mb-2">Step 2: Iris Scan</h3>
         <div
           class="w-full aspect-square bg-gray-200 flex items-center justify-center rounded-lg overflow-hidden"
@@ -332,11 +336,6 @@ onBeforeUnmount(() => {
 
       <!-- ERRORS -->
       <p v-if="errorMessage" class="text-red-600">{{ errorMessage }}</p>
-
-      <!-- FOOTER BUTTONS -->
-      <div class="mt-4 flex justify-end gap-2">
-        <button @click="$emit('close')" class="btn btn-gray">Cancel</button>
-      </div>
     </div>
   </div>
 </template>

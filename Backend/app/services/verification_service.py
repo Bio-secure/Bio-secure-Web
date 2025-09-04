@@ -67,15 +67,10 @@ async def verify_customer_identity_service(
     left_iris_image: UploadFile = None,
     right_iris_image: UploadFile = None
 ):
-    # Initial check for at least one biometric input
+    # Ensure at least one biometric input
     if not face_image and not (left_iris_image or right_iris_image):
         raise HTTPException(400, detail="At least one biometric input must be provided.")
     
-    print("Received customer_id:", national_id)
-    print("Face image:", face_image)
-    print("Left iris image:", left_iris_image)
-    print("Right iris image:", right_iris_image)
-
     # Fetch customer
     customer = await fetch_customer(national_id)
     if not customer:
@@ -91,45 +86,40 @@ async def verify_customer_identity_service(
     left_iris_result = {"is_authenticated": False, "message": "No left iris image provided."}
     right_iris_result = {"is_authenticated": False, "message": "No right iris image provided."}
     
-    # Perform Face Verification if an image is provided
+    # Perform face verification
     if face_image:
         face_result = await verify_face(national_id, face_image)
 
-    # Perform Iris Verification if images are provided
+    # Perform iris verification
     if left_iris_image:
         left_iris_result = await verify_iris(national_id, left_iris_image, "left")
-    
     if right_iris_image:
         right_iris_result = await verify_iris(national_id, right_iris_image, "right")
 
-    overall_verified = False  # start with False
+    # --- Determine overall verification ---
+    overall_verified = False
 
-    # Check irises first
-    iris_verified = (left_iris_result["is_authenticated"] or right_iris_result["is_authenticated"])
+    # Face-only
+    if face_image and not (left_iris_image or right_iris_image):
+        overall_verified = face_result["is_authenticated"]
 
-    # Only consider face if iris verification passes
-    if iris_verified:
-        if face_image:
-            # If face provided, require it to also pass
-            overall_verified = face_result["is_authenticated"]
-        else:
-            # If no face provided, iris alone is enough
-            overall_verified = True
-    else:
-        # Neither iris passed
-        overall_verified = False
+    # Face + Iris
+    elif face_image and (left_iris_image or right_iris_image):
+        iris_verified = left_iris_result["is_authenticated"] or right_iris_result["is_authenticated"]
+        overall_verified = iris_verified and face_result["is_authenticated"]
 
-    # Log the failure if needed
+    # Log failure if verification fails
     if not overall_verified:
         await log_failure(national_id, customer_name, customer_surname)
 
-    # Prepare Final Response
+    # Prepare final details
     final_details = {
         "face": face_result,
         "left_iris": left_iris_result,
         "right_iris": right_iris_result
     }
 
+    # Send email report if customer has email
     if customer_email:
         biometric_type = " and ".join(
             filter(None, [
@@ -151,7 +141,6 @@ async def verify_customer_identity_service(
         "message": "Verification Succeeded" if overall_verified else "Verification Failed",
         "details": final_details,
     }
-
 
 # --- Extracted Helpers ---
 

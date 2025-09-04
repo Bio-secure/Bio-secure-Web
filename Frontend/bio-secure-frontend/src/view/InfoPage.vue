@@ -229,13 +229,13 @@ export default defineComponent({
 <template>
   <div class="min-h-screen">
     <VerificationModal
-      :is-open="isVerificationModalVisible"
-      :customer-id="user.id" 
-      :verification-mode="verificationModeRequired"
-      @close="isVerificationModalVisible = false"
-      @verification-success="handleVerificationSuccess"
-      @verification-fail="handleVerificationFail"
-    />
+    :is-open="isVerificationModalVisible"
+    :customer-id="user.id" 
+    :verification-mode="verificationModeRequired"
+    @close="isVerificationModalVisible = false"
+    @verification-success="handleVerificationSuccess"
+    @verification-fail="handleVerificationFail"
+  />
 
     <div class="flex flex-col lg:flex-row gap-8 p-6 lg:p-8 max-w-7xl mx-auto">
       <div v-if="isLoading" class="w-full flex items-center justify-center h-96 text-lg font-semibold text-gray-600">Loading customer data...</div>
