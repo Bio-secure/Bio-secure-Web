@@ -199,7 +199,7 @@ async function submitBiometrics() {
       <div class="flex justify-center mt-8">
         <button @click="submitBiometrics" :disabled="isSubmitDisabled" class="bg-green-600 hover:bg-green-700 text-white font-bold text-lg px-16 py-3 rounded-full shadow-lg transition-transform transform hover:scale-105 disabled:bg-gray-400 disabled:cursor-not-allowed">
           <span v-if="isLoading">Submitting...</span>
-          <span v-else>Finish Registration</span>
+          <span v-else>Finish Iris Registration</span>
         </button>
       </div>
     </div>
