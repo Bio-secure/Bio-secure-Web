@@ -174,7 +174,7 @@ async function verifyIdentity() {
       body: formData,
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || "Verification failed");
+    if (!res.ok) throw new Error(data.detail, "Verification failed");
 
     if (data.verified) emit("verification-success");
     else emit("verification-fail", data.message || "Biometrics did not match.");
@@ -249,7 +249,7 @@ onBeforeUnmount(() => {
       <h2 class="text-xl font-bold mb-4">Identity Verification</h2>
 
       <!-- FACE STEP -->
-      <div class="grid grid-cols-1 gap-8 bg-white p-8 rounded-2xl shadow-xl">
+      <div v-if="currentStep === 1" class="grid grid-cols-1 gap-8 bg-white p-8 rounded-2xl shadow-xl">
         
         <div class="flex flex-col items-center">
           <h3 class="font-semibold text-gray-700 mb-3 text-xl">Face Scan</h3>
@@ -276,15 +276,23 @@ onBeforeUnmount(() => {
               Start Camera
             </button>
             <button v-if="faceState === 'streaming'" @click="captureFace" class="w-full bg-blue-600 text-white px-5 py-3 rounded-lg font-bold text-lg hover:bg-blue-700 transition shadow-md">Capture Face</button>
-            <button v-if="faceState === 'captured'" @click="startWebcam('face')" class="w-full bg-gray-200 text-gray-700 px-5 py-2 rounded-lg font-semibold hover:bg-gray-300 transition">Retake Photo</button>
+            <button v-if="faceState === 'captured'" @click="startFaceWebcam()" class="w-full bg-gray-200 text-gray-700 px-5 py-2 rounded-lg font-semibold hover:bg-gray-300 transition">Retake Photo</button>
           </div>
           <button
-            v-if="faceState === 'captured'"
+            v-if="faceState === 'captured' && verificationMode === 'face' && currentStep === 1"
             @click="verifyIdentity"
             :disabled="isLoading"
             class="btn bg-blue-600 hover:bg-green-600 px-2 py-3 text-white rounded-lg font-bold mt-4 w-[50%]"
           >
             {{ isLoading ? "Verifying..." : "Verify" }}
+          </button>
+          <button
+            v-if="faceState === 'captured' && verificationMode === 'full' && currentStep === 1"
+            @click="nextStep()"
+            :disabled="isLoading"
+            class="btn bg-blue-600 hover:bg-green-600 px-2 py-3 text-white rounded-lg font-bold mt-4 w-[50%]"
+            >
+            Next
           </button>
         </div>
       </div>
@@ -312,25 +320,29 @@ onBeforeUnmount(() => {
           <button
             v-if="irisState === 'idle'"
             @click="initWebSocket"
-            class="btn"
+            class="w-full bg-blue-600 text-white px-5 py-3 rounded-lg font-bold text-lg hover:bg-blue-700 transition shadow-md"
           >
             Connect
           </button>
           <button
             v-if="irisState === 'streaming'"
             @click="captureIris"
-            class="btn btn-green"
+            class="w-full bg-blue-600 text-white px-5 py-3 rounded-lg font-bold text-lg hover:bg-blue-700 transition shadow-md"
           >
             Capture Iris
           </button>
+          <div class="flex flex-col items-center gap-2 mt-2 w-full max-w-xs mx-auto">
           <button
             v-if="irisState === 'captured'"
             @click="verifyIdentity"
             :disabled="isLoading"
-            class="btn btn-blue"
+            class="btn bg-blue-600 hover:bg-green-600 px-2 py-3 text-white rounded-lg font-bold mt-4 w-[50%] mx-auto"
           >
             {{ isLoading ? "Verifying..." : "Verify" }}
           </button>
+          <button v-if="faceState === 'captured'" @click="initWebSocket" class="w-full bg-gray-200 text-gray-700 px-5 py-2 rounded-lg font-semibold hover:bg-gray-300 transition">Retake Photo</button>
+          </div>
+          
         </div>
       </div>
 

@@ -60,22 +60,35 @@ async def log_failure(customer_id, name, surname):
     await run_in_threadpool(lambda: supabase.table("CustomerLogs").insert([payload]).execute())
 
 # --- Main service ---
-async def verify_customer_identity_service(
-    national_id: str,
-    background_tasks: BackgroundTasks,
-    face_image: UploadFile = None,
-    left_iris_image: UploadFile = None,
-    right_iris_image: UploadFile = None
-):
-    # Ensure at least one biometric input
-    if not face_image and not (left_iris_image or right_iris_image):
-        raise HTTPException(400, detail="At least one biometric input must be provided.")
+async def verify_customer_identity_service(national_id: str,
+                                           background_tasks: BackgroundTasks,
+                                           face_image: UploadFile = None,
+                                           left_iris_image: UploadFile = None,
+                                           right_iris_image: UploadFile = None):
+    
+    # Validate National ID
+    if not national_id.isdigit() or national_id is None:
+        raise HTTPException(status_code=404, detail="Invalid National ID")
+
+    # Require at least one image
+    if not any([face_image, left_iris_image, right_iris_image]):
+        raise HTTPException(status_code=400, detail="At least one image must be provided")
+
+    # Validate file contents + MIME type
+    for img in [face_image, left_iris_image, right_iris_image]:
+        if img:
+            contents = await img.read()
+            if not contents:
+                raise HTTPException(status_code=400, detail=f"{img.filename} is empty")
+            if not img.content_type.startswith("image/"):
+                raise HTTPException(status_code=400, detail=f"{img.filename} is not a valid image")
+            await img.seek(0)
     
     # Fetch customer
     customer = await fetch_customer(national_id)
     if not customer:
         await log_failure(national_id, "Unknown", "Unknown")
-        raise HTTPException(404, detail="Customer not found.")
+        raise HTTPException(404, detail="Invalid National ID")
 
     customer_name = customer.get("Name", "Unknown")
     customer_surname = customer.get("SurName", "Customer")
@@ -102,6 +115,10 @@ async def verify_customer_identity_service(
     # Face-only
     if face_image and not (left_iris_image or right_iris_image):
         overall_verified = face_result["is_authenticated"]
+
+    # One Iris only
+    elif (left_iris_image and not right_iris_image) or (right_iris_image and not left_iris_image):
+        raise HTTPException(status_code=422, detail="Both left and right iris images are required.")
 
     # Face + Iris
     elif face_image and (left_iris_image or right_iris_image):
@@ -146,6 +163,7 @@ async def verify_customer_identity_service(
 
 async def verify_face(customer_id: int, face_image: UploadFile):
     if not face_image:
+        raise HTTPException(status_code=422, detail="Please make sure that there's image at all.")
         return {"is_authenticated": False, "details": {}}
 
     path = await save_temp_file(face_image, f"{customer_id}_face")
@@ -159,6 +177,7 @@ async def verify_face(customer_id: int, face_image: UploadFile):
 
 async def verify_iris(customer_id: str, iris_image: UploadFile, eye_type: str):
     if not iris_image:
+        raise HTTPException(status_code=422, detail="Please provide both iris image.")
         return {"is_authenticated": False, "message": "No iris image provided."}
 
     path = await save_temp_file(iris_image, f"{customer_id}_{eye_type}_iris")
@@ -209,6 +228,10 @@ async def verify_iris(customer_id: str, iris_image: UploadFile, eye_type: str):
         # Step 3: Compare features
         match_details = match_iris(uploaded_features, stored_features)
 
+        if not match_details["is_match"]:
+            print(f"{eye_type.capitalize()} iris not matched. Distance: {match_details['distance']}")
+            raise HTTPException(status_code=401, detail=f"{eye_type.capitalize()} Iris not matched.")
+
         return {
             "is_authenticated": match_details["is_match"],
             "distance": match_details["distance"],
@@ -216,6 +239,8 @@ async def verify_iris(customer_id: str, iris_image: UploadFile, eye_type: str):
             if match_details["is_match"]
             else f"{eye_type.capitalize()} Iris Verification Failed"
         }
+    except HTTPException as e:
+        raise e
 
     except Exception as e:
         return {"is_authenticated": False, "message": f"{eye_type.capitalize()} Iris verification error: {e}"}

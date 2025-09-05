@@ -1,3 +1,4 @@
+from unittest.mock import patch
 import cv2
 import numpy as np
 from iris_model.IrisRecognition.src.utils.imgutils import segment, normalize  # <-- code you pasted
@@ -62,3 +63,4 @@ def match_iris(features1, features2, threshold=0.36):
         "is_match": bool(d < threshold),
         "best_shift": shift
     }
+

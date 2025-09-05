@@ -2,6 +2,7 @@ import json
 import traceback
 from fastapi import HTTPException
 from fastapi.concurrency import run_in_threadpool
+import numpy as np
 from scipy.spatial.distance import cosine
 
 from configs.settings import supabase, DeepFace, FACE_DISTANCE_THRESHOLD
@@ -55,6 +56,13 @@ async def get_stored_face_embedding(customer_id: int):
 def compare_embeddings(uploaded_embedding, stored_embedding):
     if uploaded_embedding is None or stored_embedding is None:
         return False, None
+
+    uploaded_embedding = np.array(uploaded_embedding, dtype=float)
+    stored_embedding = np.array(stored_embedding, dtype=float)
+
+    if np.linalg.norm(uploaded_embedding) == 0 or np.linalg.norm(stored_embedding) == 0:
+        return False, None
+
     distance = cosine(uploaded_embedding, stored_embedding)
     is_match = bool(distance < FACE_DISTANCE_THRESHOLD)
     return is_match, distance

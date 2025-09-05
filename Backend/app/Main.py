@@ -1,7 +1,9 @@
+from io import BytesIO
 from fastapi import HTTPException
 from typing import Optional
 from fastapi import FastAPI, Form, UploadFile, File, BackgroundTasks, Query
 from fastapi.middleware.cors import CORSMiddleware
+from PIL import Image
 
 from configs.settings import supabase
 
@@ -32,7 +34,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+async def validate_image(img: UploadFile):
+    """
+    Validate that the uploaded file is a non-empty image with a correct MIME type.
+    Raise 400 if invalid.
+    """
+    if not img:
+        raise HTTPException(status_code=400, detail="Image file is required")
 
+    contents = await img.read()
+    if not contents:
+        raise HTTPException(status_code=400, detail=f"{img.filename} is empty")
+
+    if not img.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail=f"{img.filename} is not a valid image")
+
+    # Try opening the image to ensure it's valid
+    try:
+        Image.open(BytesIO(contents)).verify()
+    except Exception:
+        raise HTTPException(status_code=400, detail=f"{img.filename} is not a valid image")
+
+    await img.seek(0)
 
 @app.get("/")
 def root():
@@ -61,6 +84,10 @@ async def verify_customer_identity(
     left_image: UploadFile = File(None),
     right_image: UploadFile = File(None)
 ):
+    for img in [face_image, left_image, right_image]:
+        if img:
+            await validate_image(img)
+            
     try:
         return await verify_customer_identity_service(
             national_id=national_id,

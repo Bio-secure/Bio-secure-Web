@@ -87,10 +87,10 @@ def verify_password_service(payload: VerifyPasswordRequest):
         raise HTTPException(status_code=404, detail="Employee not found")
     
     hashed = response.data["EmPass"]
-    from passlib.context import CryptContext
-    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-    
+
+    # use the existing module-level pwd_context
     if not pwd_context.verify(payload.password, hashed):
         raise HTTPException(status_code=401, detail="Invalid password")
     
     return {"valid": True}
+
