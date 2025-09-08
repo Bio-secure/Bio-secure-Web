@@ -1,4 +1,6 @@
+from datetime import date
 import io
+from random import randint
 from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import BackgroundTasks
 from starlette.datastructures import UploadFile as StarletteUploadFile
@@ -6,6 +8,7 @@ import pytest
 import numpy as np
 from starlette.testclient import TestClient
 from PIL import Image
+from services.customer_service import delete_customer_service
 from services.verification_service import verify_customer_identity_service, supabase
 from Main import app
 
@@ -380,3 +383,58 @@ async def test_integration_email_sent_on_authentication_failure(client, monkeypa
     assert "Alice Smith" in called_args[1]                # Full name
     assert "face" in called_args[2]                       # Authentication method
     assert called_args[3] is False                        # Result: failure
+
+
+# --------------------------
+# Deleted customers tests
+
+@pytest.mark.asyncio
+async def test_delete_customer_integration():
+    # --- Step 1: Generate unique National_ID ---
+    national_id = str(randint(1_000_000_000_000, 9_999_999_999_999))
+
+    # --- Step 2: Insert dummy customer ---
+    dummy_customer = {
+        "National_ID": national_id,
+        "Name": "Test",
+        "SurName": "Customer",
+        "BirthDate": "2000-01-01",
+        "phone_no": "0123456789",
+        "Gender": "Other",
+        "DOR": date.today().isoformat(),
+        "Balance": 0,
+        "Email": "test@example.com"
+    }
+    supabase.table("Customer").insert(dummy_customer).execute()
+
+    # --- Step 3: Insert related biometric data ---
+    supabase.table("Biometric").insert({
+        "National_ID": national_id,
+        "face_image_url": "dummy_face.jpg",
+        "iris_left_image_url": "dummy_iris_left.jpg",
+        "iris_right_image_url": "dummy_iris_right.jpg"
+    }).execute()
+
+    # --- Step 4: Insert related transactions ---
+    supabase.table("Transactions").insert({
+        "customer_id": national_id,
+        "transaction_type": "deposit",
+        "amount": 100,
+        "note": "Test transaction"
+    }).execute()
+
+    # --- Step 5: Delete the customer using the service ---
+    response = delete_customer_service(national_id)
+    assert response["message"] == "Customer deleted successfully"
+
+    # --- Step 6: Verify customer is deleted ---
+    cust_resp = supabase.table("Customer").select("*").eq("National_ID", national_id).execute()
+    assert cust_resp.data == []  # empty list means deleted
+
+    # --- Step 7: Verify biometric data is deleted ---
+    bio_resp = supabase.table("Biometric").select("*").eq("National_ID", national_id).execute()
+    assert bio_resp.data == []
+
+    # --- Step 8: Verify transactions are deleted ---
+    tx_resp = supabase.table("Transactions").select("*").eq("customer_id", national_id).execute()
+    assert tx_resp.data == []

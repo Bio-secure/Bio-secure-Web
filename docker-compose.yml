@@ -1,0 +1,27 @@
+services:
+  backend:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+    container_name: fastapi-backend
+    command: uvicorn app.Main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./Backend:/app
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./Backend/.env
+    depends_on:
+      - frontend
+    environment:
+      - PYTHONPATH=/app/app
+  frontend:
+    build:
+      context: ./Frontend/bio-secure-frontend
+    container_name: vue-frontend
+    command: npm run dev
+    volumes:
+      - ./Frontend/bio-secure-frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"

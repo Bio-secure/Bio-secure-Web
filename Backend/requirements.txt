@@ -1,0 +1,22 @@
+# Core framework
+fastapi
+uvicorn[standard]
+
+# ML / Computer Vision
+tensorflow
+opencv-python
+scikit-image
+scipy
+
+# Utilities
+tqdm
+httpx
+supabase-auth
+aiofiles
+supabase
+passlib
+pytz
+python-multipart
+
+# Testing (dev only, remove in production if not needed)
+pytest
