@@ -110,8 +110,11 @@ def list_customers(page: int = 1, page_size: int = 10):
     return list_customers_service(page, page_size)
 
 @app.get("/employees")
-def list_employees():
-    return list_employees_service()
+def get_employees(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
+):
+    return list_employees_service(page, page_size)
 
 @app.post("/register-employee")
 def register_employee(employee_data: EmployeeCreate):

@@ -3,12 +3,33 @@ from fastapi import HTTPException
 from configs.settings import supabase, pwd_context
 from models.employee_models import EmployeeCreate, EmployeeLogin, VerifyPasswordRequest
 
-def list_employees_service():
+def list_employees_service(page: int = 1, page_size: int = 10):
     try:
-        response = supabase.table("Employees").select("*").execute()
-        return response.data or []
-    except Exception:
+        # Count total employees
+        count_response = supabase.table("Employees").select("EmID", count="exact").execute()
+        total = count_response.count or 0
+
+        # Apply pagination
+        start = (page - 1) * page_size
+        end = start + page_size - 1
+
+        response = (
+            supabase.table("Employees")
+            .select("EmID, EmName, EmSurName, IsAdmin")
+            .range(start, end)
+            .execute()
+        )
+
+        return {
+            "data": response.data or [],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        }
+    except Exception as e:
+        print(f"❌ Error fetching employees: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch Employees.")
+
 
 
 def register_employee_service(employee_data: EmployeeCreate):

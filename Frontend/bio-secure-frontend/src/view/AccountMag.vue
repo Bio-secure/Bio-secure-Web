@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, onMounted, computed } from "vue";
 import axios from "axios";
 // @ts-ignore
 import UpdateCustomerPopUp from "../components/UpdateCustomerPopUp.vue";
@@ -25,6 +25,19 @@ function openUpdatePopup(customer: any) {
 function closeUpdatePopup() {
   showUpdatePopup.value = false;
 }
+
+const totalCustomerPages = computed(() =>
+  Math.ceil(totalCustomers.value / pageSize)
+);
+
+function goToCustomerPage(page: number) {
+  if (page >= 1 && page <= totalCustomerPages.value) {
+    currentPage.value = page;
+    fetchCustomers();
+  }
+}
+
+
 function handleUpdated(updatedCustomer: any) {
   const index = customers.value.findIndex(c => c.National_ID === updatedCustomer.National_ID);
   if (index !== -1) {
@@ -49,18 +62,36 @@ async function fetchCustomers() {
       loading.value = false;
     }
   }
+const empCurrentPage = ref(1);
+const empPageSize = 10;
+const empTotal = ref(0);
 
-onMounted(async () => {
-  fetchCustomers()  
+const empTotalPages = computed(() =>
+  Math.ceil(empTotal.value / empPageSize)
+);
 
+async function fetchEmployees() {
   try {
-    const response = await axios.get("http://localhost:8000/employees");
-    employees.value = response.data;
+    const response = await axios.get("http://localhost:8000/employees", {
+      params: { page: empCurrentPage.value, page_size: empPageSize },
+    });
+    employees.value = response.data.data;
+    empTotal.value = response.data.total;
   } catch (err: any) {
     error.value = err.response?.data?.detail || "Failed to fetch employees";
-  } finally {
-    loading.value = false;
   }
+}
+
+function goToEmpPage(page: number) {
+  if (page >= 1 && page <= empTotalPages.value) {
+    empCurrentPage.value = page;
+    fetchEmployees();
+  }
+}
+
+onMounted(async () => {
+  fetchCustomers(),
+  fetchEmployees()
 });
 
 function nextPage() {
@@ -137,27 +168,34 @@ function prevPage() {
                     @deleted="handleDeleted"
                 />
             </div>
-            <div class="flex justify-between px-10 items-center mt-4">
+            <div class="flex justify-center items-center mt-4 space-x-2">
               <button
-                @click="prevPage"
+                @click="goToCustomerPage(currentPage - 1)"
                 :disabled="currentPage === 1"
-                class="px-4 py-2 bg-gray-200 rounded disabled:opacity-50"
+                class="px-3 py-1 rounded-lg bg-gray-200 disabled:opacity-50"
               >
-                Previous
+                Prev
               </button>
-              
-              <span class="text-gray-600">
-                Page {{ currentPage }} of {{ Math.ceil(totalCustomers / pageSize) }}
-              </span>
 
               <button
-                @click="nextPage"
-                :disabled="currentPage * pageSize >= totalCustomers"
-                class="px-4 py-2 bg-gray-200 rounded disabled:opacity-50"
+                v-for="page in totalCustomerPages"
+                :key="page"
+                @click="goToCustomerPage(page)"
+                class="px-3 py-1 rounded-lg"
+                :class="page === currentPage ? 'bg-blue-600 text-white' : 'bg-gray-100 hover:bg-gray-200'"
+              >
+                {{ page }}
+              </button>
+
+              <button
+                @click="goToCustomerPage(currentPage + 1)"
+                :disabled="currentPage === totalCustomerPages"
+                class="px-3 py-1 rounded-lg bg-gray-200 disabled:opacity-50"
               >
                 Next
               </button>
             </div>
+
         </div>
       
       <br>
@@ -190,6 +228,34 @@ function prevPage() {
                 </tbody>
             </table>
         </div>
+        <div class="flex justify-center items-center mt-4 space-x-2">
+          <button
+            @click="goToEmpPage(empCurrentPage - 1)"
+            :disabled="empCurrentPage === 1"
+            class="px-3 py-1 rounded-lg bg-gray-200 disabled:opacity-50"
+          >
+            Prev
+          </button>
+
+          <button
+            v-for="page in empTotalPages"
+            :key="page"
+            @click="goToEmpPage(page)"
+            class="px-3 py-1 rounded-lg"
+            :class="page === empCurrentPage ? 'bg-blue-600 text-white' : 'bg-gray-100 hover:bg-gray-200'"
+          >
+            {{ page }}
+          </button>
+
+          <button
+            @click="goToEmpPage(empCurrentPage + 1)"
+            :disabled="empCurrentPage === empTotalPages"
+            class="px-3 py-1 rounded-lg bg-gray-200 disabled:opacity-50"
+          >
+            Next
+          </button>
+        </div>
+
       </div>
     </div>
   </div>
