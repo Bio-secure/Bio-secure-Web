@@ -3,6 +3,8 @@ import { ref, computed, onBeforeUnmount,watch } from "vue";
 import { CheckCircleIcon } from '@heroicons/vue/24/solid';
 
 const currentStep = ref(1);
+const verificationConfirmationVisible = ref('false')
+const verificationResult = ref('false')
 
 function nextStep() {
   if (props.verificationMode === "face") {
@@ -230,10 +232,7 @@ onBeforeUnmount(() => {
 
 <template>
   <!-- BACKDROP -->
-  <div
-    v-if="isOpen"
-    class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-  >
+  <div v-if="isOpen" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
     <!-- POPUP CARD -->
     <div
       class="p-6 bg-white rounded-2xl shadow-2xl w-full max-w-md relative"

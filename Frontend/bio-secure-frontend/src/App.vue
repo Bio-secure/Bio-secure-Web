@@ -8,7 +8,7 @@ import { RouterView } from 'vue-router';
     <div class="background-pattern"></div>
 
     <div class="content">
-      <header>
+      <header v-if="$route.name !== 'login'">
         <NavBar />
       </header>
       <main>
