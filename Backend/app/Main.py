@@ -106,8 +106,8 @@ def get_customer_details(customer_id: int):
     return get_customer_details_service(customer_id)
 
 @app.get("/customers")
-def list_customers():
-    return list_customers_service()
+def list_customers(page: int = 1, page_size: int = 10):
+    return list_customers_service(page, page_size)
 
 @app.get("/employees")
 def list_employees():

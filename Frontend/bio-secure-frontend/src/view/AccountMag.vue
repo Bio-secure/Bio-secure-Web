@@ -13,6 +13,11 @@ const error = ref<string | null>(null);
 const showUpdatePopup = ref(false);
 const selectedCustomer = ref<any | null>(null);
 
+const currentPage = ref(1);
+const pageSize = 5;
+const totalCustomers = ref(0);
+
+
 function openUpdatePopup(customer: any) {
   selectedCustomer.value = { ...customer };
   showUpdatePopup.value = true;
@@ -30,15 +35,23 @@ function handleDeleted(id: number) {
   customers.value = customers.value.filter(c => c.National_ID !== id);
 }
 
-onMounted(async () => {
-  try {
-    const response = await axios.get("http://localhost:8000/customers");
-    customers.value = response.data;
-  } catch (err: any) {
-    error.value = err.response?.data?.detail || "Failed to fetch customers";
-  } finally {
-    loading.value = false;
+async function fetchCustomers() {
+    loading.value = true;
+    try {
+      const response = await axios.get("http://localhost:8000/customers", {
+        params: { page: currentPage.value, page_size: pageSize },
+      });
+      customers.value = response.data.data;
+      totalCustomers.value = response.data.total;
+    } catch (err: any) {
+      error.value = err.response?.data?.detail || "Failed to fetch customers";
+    } finally {
+      loading.value = false;
+    }
   }
+
+onMounted(async () => {
+  fetchCustomers()  
 
   try {
     const response = await axios.get("http://localhost:8000/employees");
@@ -49,10 +62,24 @@ onMounted(async () => {
     loading.value = false;
   }
 });
+
+function nextPage() {
+  if (currentPage.value * pageSize < totalCustomers.value) {
+    currentPage.value++;
+    fetchCustomers();
+  }
+}
+function prevPage() {
+  if (currentPage.value > 1) {
+    currentPage.value--;
+    fetchCustomers();
+  }
+}
+
 </script>
 
 <template>
-  <div class="p-6 h-screen bg-slate-100 font-sans">
+  <div class="p-6 h-full bg-slate-100 font-sans">
     <!-- Loading -->
     <div v-if="loading" class="text-gray-500">Loading customers...</div>
 
@@ -109,6 +136,27 @@ onMounted(async () => {
                     @updated="handleUpdated"
                     @deleted="handleDeleted"
                 />
+            </div>
+            <div class="flex justify-between px-10 items-center mt-4">
+              <button
+                @click="prevPage"
+                :disabled="currentPage === 1"
+                class="px-4 py-2 bg-gray-200 rounded disabled:opacity-50"
+              >
+                Previous
+              </button>
+              
+              <span class="text-gray-600">
+                Page {{ currentPage }} of {{ Math.ceil(totalCustomers / pageSize) }}
+              </span>
+
+              <button
+                @click="nextPage"
+                :disabled="currentPage * pageSize >= totalCustomers"
+                class="px-4 py-2 bg-gray-200 rounded disabled:opacity-50"
+              >
+                Next
+              </button>
             </div>
         </div>
       

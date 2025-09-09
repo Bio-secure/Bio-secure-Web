@@ -53,10 +53,28 @@ def enrich_transactions(transactions: list):
     return enriched
 
 
-def list_customers_service():
+def list_customers_service(page: int = 1, page_size: int = 10):
     try:
-        response = supabase.table("Customer").select("National_ID, Name, SurName, phone_no, Email").execute()
-        return response.data or []
+        offset = (page - 1) * page_size
+        response = (
+            supabase.table("Customer")
+            .select("National_ID, Name, SurName, phone_no, Email")
+            .range(offset, offset + page_size - 1)  # Supabase uses index ranges
+            .execute()
+        )
+
+        total_count = (
+            supabase.table("Customer")
+            .select("National_ID", count="exact")  # get total for pagination
+            .execute()
+        ).count
+
+        return {
+            "data": response.data or [],
+            "total": total_count,
+            "page": page,
+            "page_size": page_size,
+        }
     except Exception as e:
         print(f"❌ Error fetching customers: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch customers.")
