@@ -132,7 +132,7 @@ export default defineComponent({
         const data = await response.json();
         if (!response.ok) throw new Error(data.detail);
 
-        alert(`${details.transaction_type} successful!`);
+        // alert(`${details.transaction_type} successful!`);
         user.value.balance = data.new_balance;
 
         const newTx: Transaction = {
