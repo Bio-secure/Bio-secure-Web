@@ -59,6 +59,9 @@ export default {
 
 <template>
   <div class="min-h-screen flex items-center justify-center">
+    <div class="absolute top-0">
+      <img src="../assets/bioSecureLogoTrans.png" alt="bioSecure Logo" class="mx-auto mb-6 w-[50%]" />
+    </div>
     <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
       <h2 class="text-3xl font-bold text-center text-gray-800 mb-6">Employee Login</h2>
       <form @submit.prevent="handleLogin">
