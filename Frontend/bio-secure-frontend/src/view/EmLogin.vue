@@ -58,8 +58,8 @@ export default {
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center">
-    <div class="absolute top-0">
+  <div class="h-screen flex items-center justify-center">
+    <div class="absolute top-25">
       <img src="../assets/bioSecureLogoTrans.png" alt="bioSecure Logo" class="mx-auto mb-6 w-[50%]" />
     </div>
     <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">

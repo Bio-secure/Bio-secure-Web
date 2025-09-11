@@ -9,6 +9,7 @@ opencv-python
 scikit-image
 scipy
 deepface
+tf-keras
 
 # Utilities
 tqdm
