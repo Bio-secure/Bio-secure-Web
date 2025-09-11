@@ -53,7 +53,7 @@ def enrich_transactions(transactions: list):
     return enriched
 
 
-def list_customers_service(page: int = 1, page_size: int = 10):
+def list_customers_service_page(page: int = 1, page_size: int = 10):
     try:
         offset = (page - 1) * page_size
         response = (
@@ -77,6 +77,14 @@ def list_customers_service(page: int = 1, page_size: int = 10):
         }
     except Exception as e:
         print(f"❌ Error fetching customers: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch customers.")
+    
+def list_customers_service():
+    try:
+        response = supabase.table("Customer").select("National_ID, Name, SurName, phone_no, Email").execute()
+        return response.data or []
+    except Exception as e:
+        print(f"Error fetching customers: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch customers.")
 
 def update_customer_service(customer_id: int, customer: CustomerUpdate):

@@ -12,7 +12,7 @@ from models.customer_model import CustomerUpdate
 from models.employee_models import EmployeeCreate, EmployeeLogin, VerifyPasswordRequest
 from models.transaction_models import TransactionCreate
 from services.biometric_service import register_biometric_face_service, register_biometric_iris_service
-from services.customer_service import delete_customer_service, get_customer_details_service, list_customers_service, update_customer_service
+from services.customer_service import delete_customer_service, get_customer_details_service, list_customers_service, list_customers_service_page, update_customer_service
 from services.employee_service import list_employees_service, login_employee_service, register_employee_service, verify_password_service
 from services.report_service import get_customer_logs_service, get_employee_logs_service, get_registration_records_service, get_registration_stats_service
 from services.transaction_service import create_transaction_service
@@ -105,9 +105,13 @@ async def verify_customer_identity(
 def get_customer_details(customer_id: int):
     return get_customer_details_service(customer_id)
 
-@app.get("/customers")
+@app.get("/customers-page")
 def list_customers(page: int = 1, page_size: int = 10):
-    return list_customers_service(page, page_size)
+    return list_customers_service_page(page, page_size)
+
+@app.get("/customers")
+def list_all_customers():
+    return list_customers_service()
 
 @app.get("/employees")
 def get_employees(

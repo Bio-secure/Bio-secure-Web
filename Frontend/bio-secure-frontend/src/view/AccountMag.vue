@@ -51,7 +51,7 @@ function handleDeleted(id: number) {
 async function fetchCustomers() {
     loading.value = true;
     try {
-      const response = await axios.get("http://localhost:8000/customers", {
+      const response = await axios.get("http://localhost:8000/customers-page", {
         params: { page: currentPage.value, page_size: pageSize },
       });
       customers.value = response.data.data;
