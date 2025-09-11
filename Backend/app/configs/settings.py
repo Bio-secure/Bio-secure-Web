@@ -21,7 +21,7 @@ except ImportError:
     DeepFace = None
 
 # thresholds
-FACE_DISTANCE_THRESHOLD = 0.50
+FACE_DISTANCE_THRESHOLD = 0.35
 IRIS_AUTHENTICATION_THRESHOLD = 0.65
 
 # Password hashing context

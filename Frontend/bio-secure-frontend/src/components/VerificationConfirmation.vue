@@ -68,9 +68,32 @@ const emit = defineEmits(["close"]);
 
         <!-- Details Section -->
         <div v-if="details" class="text-sm text-gray-700 bg-gray-50 p-3 rounded-lg overflow-auto max-h-48">
-          <p><strong>Face:</strong> {{ details.face?.details?.message || details.face?.message || 'No data' }} <strong>Distance:</strong> {{ ((1 - details.face.details.distance) * 100 ).toFixed(1) }}%</p>
-          <p><strong>Left Iris:</strong> {{ details.left_iris?.message }} <strong>Distance:</strong> {{ ((1 - details.left_iris.distance) * 100 ).toFixed(1) }}% </p>
-          <p><strong>Right Iris:</strong> {{ details.right_iris?.message }} <strong>Distance:</strong> {{ ((1 - details.right_iris.distance) * 100 ).toFixed(1) }}%  </p>
+          <div class="mt-2">
+          <!-- Face -->
+          <p v-if="details.face?.details.message">
+            <strong>Face:</strong> {{ details.face.details.message }} 
+            <span v-if="details.face.details.distance !== undefined">
+              <strong>Distance:</strong> {{ ((1 - details.face.details.distance) * 100).toFixed(1) }}%
+            </span>
+          </p>
+
+          <!-- Left Iris -->
+          <p v-if="details.left_iris?.message && !details.left_iris.message.includes('No left iris image provided')">
+            <strong>Left Iris:</strong> {{ details.left_iris.message }} 
+            <span v-if="details.left_iris.distance !== undefined">
+              Distance: {{ ((1 - details.left_iris.distance) * 100).toFixed(1) }}%
+            </span>
+          </p>
+
+          <!-- Right Iris -->
+          <p v-if="details.right_iris?.message && !details.right_iris.message.includes('No right iris image provided')">
+            <strong>Right Iris:</strong> {{ details.right_iris.message }} 
+            <span v-if="details.right_iris.distance !== undefined">
+              Distance: {{ ((1 - details.right_iris.distance) * 100).toFixed(1) }}%
+            </span>
+          </p>
+        </div>
+          
         </div>
 
         <!-- OK Button -->
