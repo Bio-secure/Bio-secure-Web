@@ -222,9 +222,9 @@ export default {
 </script>
 
 <template>
-  <div class="flex h-screen font-sans">
+  <div class="flex  font-sans">
     <main class="flex-1 p-6 lg:p-8 overflow-y-auto">
-      <div class="max-w-7xl mx-auto">
+      <div class="mx-auto">
         <div class="mb-8">
           <h1 class="text-3xl font-bold text-gray-800">Monitoring Dashboard</h1>
         </div>
@@ -389,7 +389,7 @@ export default {
       </div>
     </main>
 
-    <aside class="w-80 bg-white shadow-lg flex flex-col p-6 flex-shrink-0">
+    <aside class=" right-0 w-80 bg-white shadow-lg flex-shrink-0 p-6 overflow-y-auto">
       <div class="flex flex-col items-center text-center">
         <div class="w-28 h-28 rounded-full bg-blue-200 flex items-center justify-center text-blue-800 text-5xl font-bold mb-4 ring-4 ring-white shadow-md">
           {{ authState.name ? authState.name.charAt(0) : '?' }}{{ authState.surname ? authState.surname.charAt(0) : '' }}

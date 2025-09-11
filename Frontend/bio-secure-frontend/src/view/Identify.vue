@@ -55,7 +55,7 @@ watch(selectedCustomer, (newSelection) => {
 </script>
 
 <template>
-  <div class="min-h-screen pt-20 px-4 flex flex-col items-center font-sans">
+  <div class="pt-20 px-4 flex flex-col items-center font-sans">
     <div class="w-full max-w-lg text-center">
       <h1 class="text-4xl font-bold text-gray-800">Customer Account Lookup</h1>
       <p class="text-lg text-gray-600 mt-2">Select a customer from the list to view their details.</p>

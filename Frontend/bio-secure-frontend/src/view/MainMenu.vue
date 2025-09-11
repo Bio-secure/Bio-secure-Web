@@ -39,7 +39,7 @@ export default defineComponent({
 </script>
 
 <template>
-  <div class="relative min-h-screen flex flex-col items-center justify-center p-8 font-sans overflow-hidden">
+  <div class="relative mt-15 flex flex-col items-center justify-center p-8 font-sans overflow-hidden">
 
     <agreement-pop-up v-if="showAgreement" @acknowledged="handleAgreementAcknowledged" />
 

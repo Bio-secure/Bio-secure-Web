@@ -244,7 +244,7 @@ export default defineComponent({
 </script>
 
 <template>
-  <div class="min-h-screen">
+  <div>
     <VerificationModal
       :is-open="isVerificationModalVisible"
       :customer-id="user.id" 

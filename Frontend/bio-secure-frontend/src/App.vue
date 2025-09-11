@@ -8,10 +8,10 @@ import { RouterView } from 'vue-router';
     <div class="background-pattern"></div>
 
     <div class="content">
-      <header v-if="$route.name !== 'login'" class="absolute top-0 left-0 w-full z-20">
+      <header v-if="$route.name !== 'login'" class="fixed top-0 left-0 w-full z-20 shadow-sm bg-white">
         <NavBar />
       </header>
-      <main class="relative w-full max-w-7xl mx-auto px-4">
+      <main class="relative w-full mx-auto pt-15">
         <RouterView />
       </main>
     </div>
