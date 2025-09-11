@@ -30,7 +30,7 @@ const handleLogout = () => {
           to="/main"
           class="text-2xl font-bold text-blue-600 tracking-wide hover:opacity-80 transition"
         >
-          Bio-secure
+          <img src="../assets/bioSecureLogoTrans.png" alt="bioSecure Logo" class="h-10 inline-block mr-2 -mt-1" />
         </RouterLink>
       </div>
       
