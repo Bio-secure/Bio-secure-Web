@@ -17,6 +17,7 @@ supabase
 passlib
 pytz
 python-multipart
+bcrypt
 
 # Testing (dev only, remove in production if not needed)
 pytest

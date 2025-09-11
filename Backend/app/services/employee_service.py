@@ -95,9 +95,6 @@ def login_employee_service(employee_login_data: EmployeeLogin):
     except HTTPException:
         raise  # re-raise clean HTTP errors
     except Exception as e:
-        if 'log_payload' in locals():
-            log_payload["Error"] = str(e)
-            supabase.table("EmployeeLogs").insert(log_payload).execute()
         raise HTTPException(status_code=500, detail=f"Unexpected error during login: {str(e)}")
 
 
