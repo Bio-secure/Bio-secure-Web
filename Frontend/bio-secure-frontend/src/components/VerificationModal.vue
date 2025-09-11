@@ -180,6 +180,8 @@ async function verifyIdentity() {
 
     if (data.verified) emit("verification-success");
     else emit("verification-fail", data.message || "Biometrics did not match.");
+
+    emit("verification-complete", data); 
   } catch (err) {
     errorMessage.value = err.message;
   } finally {

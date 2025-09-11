@@ -6,6 +6,7 @@ const props = defineProps({
   isOpen: { type: Boolean, default: false },
   success: { type: Boolean, default: false },
   message: { type: String, default: "" },
+  details: { type: Object, default: null },
 });
 
 const emit = defineEmits(["close"]);
@@ -64,6 +65,13 @@ const emit = defineEmits(["close"]);
         <p class="text-gray-600 text-center mb-6">
           {{ message }}
         </p>
+
+        <!-- Details Section -->
+        <div v-if="details" class="text-sm text-gray-700 bg-gray-50 p-3 rounded-lg overflow-auto max-h-48">
+          <p><strong>Face:</strong> {{ details.face?.details?.message || details.face?.message || 'No data' }} <strong>Distance:</strong> {{ ((1 - details.face.details.distance) * 100 ).toFixed(1) }}%</p>
+          <p><strong>Left Iris:</strong> {{ details.left_iris?.message }} <strong>Distance:</strong> {{ ((1 - details.left_iris.distance) * 100 ).toFixed(1) }}% </p>
+          <p><strong>Right Iris:</strong> {{ details.right_iris?.message }} <strong>Distance:</strong> {{ ((1 - details.right_iris.distance) * 100 ).toFixed(1) }}%  </p>
+        </div>
 
         <!-- OK Button -->
         <div class="flex justify-center">

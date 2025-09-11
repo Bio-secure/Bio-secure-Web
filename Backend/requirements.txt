@@ -4,9 +4,11 @@ uvicorn[standard]
 
 # ML / Computer Vision
 tensorflow
+keras
 opencv-python
 scikit-image
 scipy
+deepface
 
 # Utilities
 tqdm

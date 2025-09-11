@@ -67,6 +67,8 @@ export default defineComponent({
     const confirmationMessage = ref('');
     const verificationSuccess = ref(false);
 
+    const verificationDetails = ref<any>(null);
+
     const formattedAmount = computed({
       get: () => {
         if (transaction.value.amount === null || transaction.value.amount === 0) return '';
@@ -177,23 +179,20 @@ export default defineComponent({
       isVerificationModalVisible.value = true;
     };
 
-    const handleVerificationSuccess = () => {
+    const handleVerificationComplete = (data: any) => {
       isVerificationModalVisible.value = false;
-      verificationSuccess.value = true;
-      confirmationMessage.value = 'Customer verified successfully.';
+      verificationSuccess.value = data.verified; // true or false
+      confirmationMessage.value = data.message || (data.verified ? 'Verification Successful' : 'Verification Failed');
       isConfirmationVisible.value = true;
 
-      processTransaction(pendingTransaction.value);
+      // If verification passed, process transaction
+      if (data.verified && pendingTransaction.value) {
+        processTransaction(pendingTransaction.value);
+      }
       pendingTransaction.value = null;
-    };
 
-    const handleVerificationFail = (failMessage: string) => {
-      isVerificationModalVisible.value = false;
-      verificationSuccess.value = false;
-      confirmationMessage.value = failMessage || 'Verification failed.';
-      isConfirmationVisible.value = true;
-
-      pendingTransaction.value = null;
+      // Store full details for displaying in confirmation
+      verificationDetails.value = data.details;
     };
 
     const formattedBirthDate = computed(() => {
@@ -231,13 +230,13 @@ export default defineComponent({
       isVerificationModalVisible,
       pendingTransaction,
       verificationModeRequired,
-      handleVerificationSuccess,
-      handleVerificationFail,
+      handleVerificationComplete,
       formattedAmount,
       formattedBirthDate,
       isConfirmationVisible,
       confirmationMessage,
       verificationSuccess,
+      verificationDetails
     };
   }
 });
@@ -247,16 +246,16 @@ export default defineComponent({
   <div>
     <VerificationModal
       :is-open="isVerificationModalVisible"
-      :customer-id="user.id" 
+      :customer-id="user.id"
       :verification-mode="verificationModeRequired"
       @close="isVerificationModalVisible = false"
-      @verification-success="handleVerificationSuccess"
-      @verification-fail="handleVerificationFail"
+      @verification-complete="handleVerificationComplete"
     />
     <VerificationConfirmation
       :is-open="isConfirmationVisible"
       :success="verificationSuccess"
       :message="confirmationMessage"
+      :details="verificationDetails"
       @close="isConfirmationVisible = false"
     />
 
