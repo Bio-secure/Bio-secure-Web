@@ -48,14 +48,12 @@ function goToCustomerPage(page: number) {
 }
 
 
-function handleCustomerUpdated(updatedCustomer: any) {
-  const index = customers.value.findIndex(c => c.National_ID === updatedCustomer.National_ID);
-  if (index !== -1) {
-    customers.value[index] = updatedCustomer; // update table row
+function fetchEntities() {
+  if (selectedType.value === "customer") {
+    fetchCustomers();
+  } else if (selectedType.value === "employee") {
+    fetchEmployees();
   }
-}
-function handleCustoemerDeleted(id: number) {
-  customers.value = customers.value.filter(c => c.National_ID !== id);
 }
 
 async function fetchCustomers() {
@@ -273,8 +271,8 @@ function prevPage() {
           :title="selectedType === 'customer' ? 'Edit Customer' : 'Edit Employee'"
           :entity="selectedEntity"
           @close="closeUpdatePopup"
-          @updated="selectedType === 'customer' ? handleCustomerUpdated : fetchEmployees"
-          @deleted="selectedType === 'customer' ? handleCustoemerDeleted : fetchEmployees"
+          @updated="fetchEntities"
+          @deleted="fetchEntities"
         />
 
       </div>
