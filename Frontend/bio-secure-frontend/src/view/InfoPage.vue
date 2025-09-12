@@ -1,6 +1,6 @@
 <script lang="ts">
 import { defineComponent, ref, onMounted, computed } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 // @ts-ignore
 import authState from '../services/authService';
 // @ts-ignore
@@ -16,6 +16,7 @@ import {
   EnvelopeIcon,
   CakeIcon,
 } from '@heroicons/vue/24/outline';
+import router from '../router';
 
 interface Transaction {
   id: number;
@@ -39,6 +40,7 @@ export default defineComponent({
   },
   setup() {
     const route = useRoute();
+    const router = useRouter();
     const user = ref({
       name: '',
       surname: '',
@@ -195,6 +197,11 @@ export default defineComponent({
       verificationDetails.value = data.details;
     };
 
+    const openBiometricRegistration = () => {
+      // This could open a modal or navigate to a biometric registration page
+      router.push(`/register-biometric-face/${route.params.id}`);
+    };
+
     const formattedBirthDate = computed(() => {
       if (!user.value.birthDate) return 'N/A';
       return new Date(user.value.birthDate).toLocaleDateString('en-GB', {
@@ -236,7 +243,9 @@ export default defineComponent({
       isConfirmationVisible,
       confirmationMessage,
       verificationSuccess,
-      verificationDetails
+      verificationDetails,
+      openBiometricRegistration,
+      authState
     };
   }
 });
@@ -396,6 +405,15 @@ export default defineComponent({
               <ArrowDownCircleIcon v-else class="h-6 w-6"/>
               Submit {{ isDepositMode ? 'Deposit' : 'Withdrawal' }}
             </button>
+            <div v-if="authState.isAdmin" class="mt-4">
+              <button
+                type="button"
+                @click="openBiometricRegistration"
+                class="w-full py-3 text-white rounded-lg font-semibold text-lg bg-blue-600 hover:bg-blue-700 flex items-center justify-center gap-2"
+              >
+                Re-Register Biometric
+              </button>
+            </div>
           </form>
         </div>
       </template>
