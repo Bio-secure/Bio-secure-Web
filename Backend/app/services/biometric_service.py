@@ -1,3 +1,4 @@
+import cv2
 import aiofiles, os, json, base64, shutil, traceback, httpx
 from fastapi import HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
@@ -81,6 +82,20 @@ async def process_face(national_id: str, name: str, face_image: UploadFile):
     return url, embedding
 
 
+def preprocess_iris(img_path, size=240):
+    img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+    if img is None:
+        raise ValueError(f"Could not read image at {img_path}")
+
+    # Histogram equalization for illumination normalization
+    img = cv2.equalizeHist(img)
+
+    # Optional: detect iris/pupil center using Hough Circle (can improve later)
+    # Here we just resize to a fixed size for stability
+    img = cv2.resize(img, (size, size))
+
+    return img
+
 
 # --- Handle Iris ---
 # --- Process a single iris (left or right) ---
@@ -95,14 +110,15 @@ async def process_single_iris(national_id: str, name: str, image: UploadFile, ey
             content = await image.read()
             await f.write(content)
 
-        # Step 1: Extract embedding locally
-        try:
-            code, mask = await run_in_threadpool(extract_iris_features, path)
-            embedding = {"code": code.tolist(), "mask": mask.tolist()}
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Iris feature extraction failed: {e}")
+        # Step 1: Preprocess
+        preprocessed_img = preprocess_iris(path)
+        cv2.imwrite(path, preprocessed_img)  # overwrite temp file for feature extractor
 
-        # Step 2: Upload to Supabase
+        # Step 2: Extract iris embedding
+        code, mask = await run_in_threadpool(extract_iris_features, path)
+        embedding = {"code": code.tolist(), "mask": mask.tolist()}
+
+        # Step 3: Upload to Supabase
         try:
             async with aiofiles.open(path, "rb") as f:
                 file_bytes = await f.read()
@@ -123,7 +139,6 @@ async def process_single_iris(national_id: str, name: str, image: UploadFile, ey
         return image_url, embedding
 
     except Exception as e:
-        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Iris processing failed: {e}")
 
 

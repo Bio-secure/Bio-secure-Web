@@ -1,10 +1,12 @@
 import json
 import os, base64, datetime, aiofiles
+import cv2
 from fastapi import HTTPException, UploadFile, BackgroundTasks
 from fastapi.concurrency import run_in_threadpool
 import httpx
 import numpy as np
 
+from services.biometric_service import preprocess_iris
 from services.face_service import authenticate_face_from_api
 from configs.settings import supabase, IRIS_MODEL_API_URL
 from utils.email_utils import send_authentication_report_email
@@ -95,7 +97,11 @@ async def verify_customer_identity_service(national_id: str,
 
     # Perform verifications
     face_result = await verify_face(national_id, face_image) if face_image else {"is_authenticated": False, "message": "No face image provided."}
-    iris_results = await verify_iris(national_id, left_iris_image, right_iris_image)
+    iris_results = await verify_iris(
+        national_id,
+        left_iris_images=[left_iris_image] if left_iris_image else None,
+        right_iris_images=[right_iris_image] if right_iris_image else None
+    )
 
     # Determine overall verification
     overall_verified = face_result["is_authenticated"]
@@ -158,64 +164,67 @@ async def verify_face(customer_id: int, face_image: UploadFile):
             os.remove(path)
 
 
-async def verify_iris(customer_id: str, left_iris_image: UploadFile = None, right_iris_image: UploadFile = None):
+async def verify_iris(customer_id: str, left_iris_images: list = None, right_iris_images: list = None):
     results = {
         "left": {"is_authenticated": False, "message": "No left iris image provided.", "distance": None},
         "right": {"is_authenticated": False, "message": "No right iris image provided.", "distance": None},
     }
 
-    async def process_eye(iris_image, eye_type):
-        if not iris_image:
+    async def process_eye(images_list, eye_type):
+        if not images_list:
             return {"is_authenticated": False, "message": f"No {eye_type} iris image provided.", "distance": None}
 
-        path = await save_temp_file(iris_image, f"{customer_id}_{eye_type}_iris")
-        try:
-            uploaded_features = await run_in_threadpool(extract_iris_features, image_path=path)
-            if not uploaded_features:
-                return {"is_authenticated": False, "message": f"Failed to extract {eye_type} iris features.", "distance": None}
+        distances = []
+        for img in images_list:
+            path = await save_temp_file(img, f"{customer_id}_{eye_type}_iris")
+            try:
+                preprocessed_img = preprocess_iris(path)
+                cv2.imwrite(path, preprocessed_img)
 
-            u_code, u_mask = uploaded_features
+                uploaded_features = await run_in_threadpool(extract_iris_features, path)
+                if not uploaded_features:
+                    continue
 
-            db_response = await run_in_threadpool(
-                lambda: supabase.table("Biometric")
-                .select(f"iris_{eye_type}_embedding")
-                .eq("National_ID", customer_id)
-                .single()
-                .execute()
-            )
+                u_code, u_mask = uploaded_features
 
-            stored_features = db_response.data.get(f"iris_{eye_type}_embedding")
-            if not stored_features:
-                return {"is_authenticated": False, "message": f"No registered {eye_type} iris data.", "distance": None}
+                db_response = await run_in_threadpool(
+                    lambda: supabase.table("Biometric")
+                    .select(f"iris_{eye_type}_embedding")
+                    .eq("National_ID", customer_id)
+                    .single()
+                    .execute()
+                )
 
-            # Parse stored features
-            if isinstance(stored_features, str):
-                stored_features = json.loads(stored_features)
-            if isinstance(stored_features, dict):
+                stored_features = db_response.data.get(f"iris_{eye_type}_embedding")
+                if not stored_features:
+                    continue
+
+                if isinstance(stored_features, str):
+                    stored_features = json.loads(stored_features)
                 s_code = np.array(stored_features["code"], dtype=np.uint8)
                 s_mask = np.array(stored_features["mask"], dtype=np.uint8)
                 stored_features = (s_code, s_mask)
-            elif isinstance(stored_features, tuple) and len(stored_features) == 2:
-                s_code, s_mask = stored_features
-            else:
-                return {"is_authenticated": False, "message": f"Stored {eye_type} iris data is invalid.", "distance": None}
 
-            match_details = match_iris(uploaded_features, stored_features)
+                match_details = match_iris(uploaded_features, stored_features)
+                distances.append(match_details["distance"])
 
-            return {
-                "is_authenticated": match_details["is_match"],
-                "distance": match_details["distance"],
-                "message": f"{eye_type.capitalize()} Iris Verified" if match_details["is_match"] else f"{eye_type.capitalize()} Iris Verification Failed"
-            }
+            finally:
+                if os.path.exists(path):
+                    os.remove(path)
 
-        finally:
-            if os.path.exists(path):
-                os.remove(path)
+        if not distances:
+            return {"is_authenticated": False, "message": f"{eye_type.capitalize()} Iris Verification Failed", "distance": None}
 
-    # Run left and right separately
-    if left_iris_image:
-        results["left"] = await process_eye(left_iris_image, "left")
-    if right_iris_image:
-        results["right"] = await process_eye(right_iris_image, "right")
+        # Average distance across frames
+        avg_distance = sum(distances) / len(distances)
+        is_match = avg_distance < 0.35  # choose threshold experimentally
 
+        return {
+            "is_authenticated": is_match,
+            "distance": avg_distance,
+            "message": f"{eye_type.capitalize()} Iris Verified" if is_match else f"{eye_type.capitalize()} Iris Verification Failed"
+        }
+
+    results["left"] = await process_eye(left_iris_images, "left")
+    results["right"] = await process_eye(right_iris_images, "right")
     return results
