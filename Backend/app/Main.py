@@ -9,11 +9,11 @@ from configs.settings import supabase
 
 
 from models.customer_model import CustomerUpdate
-from models.employee_models import EmployeeCreate, EmployeeLogin, VerifyPasswordRequest
+from models.employee_models import EmployeeCreate, EmployeeLogin, EmployeeUpdate, VerifyPasswordRequest
 from models.transaction_models import TransactionCreate
 from services.biometric_service import register_biometric_face_service, register_biometric_iris_service
 from services.customer_service import delete_customer_service, get_customer_details_service, list_customers_service, list_customers_service_page, update_customer_service
-from services.employee_service import list_employees_service, login_employee_service, register_employee_service, verify_password_service
+from services.employee_service import delete_employee_service, list_employees_service, login_employee_service, register_employee_service, update_employee_service, verify_password_service
 from services.report_service import get_customer_logs_service, get_employee_logs_service, get_registration_records_service, get_registration_stats_service
 from services.transaction_service import create_transaction_service
 from services.user_service import register_user_service
@@ -167,8 +167,16 @@ def verify_password(payload: VerifyPasswordRequest):
 
 @app.put("/customers/{customer_id}")
 async def update_customer(customer_id: int, customer: CustomerUpdate):
-    return await update_customer_service(customer_id, customer)
+    return update_customer_service(customer_id, customer)
 
 @app.delete("/customers/{customer_id}")
 def delete_customer(customer_id: int):
-    return delete_customer_service(customer_id) 
+    return delete_employee_service(customer_id) 
+
+@app.put("/employees/{em_id}")
+async def update_employee(em_id: int, employee: EmployeeUpdate):
+    return update_employee_service(em_id, employee)
+
+@app.delete("/employees/{em_id}")
+def delete_employee(em_id: int):
+    return delete_employee_service(em_id) 

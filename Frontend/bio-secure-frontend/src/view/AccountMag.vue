@@ -2,7 +2,7 @@
 import { ref, onMounted, computed } from "vue";
 import axios from "axios";
 // @ts-ignore
-import UpdateCustomerPopUp from "../components/UpdateCustomerPopUp.vue";
+import UpdateEntityPopUp from "../components/UpdateCustomerPopUp.vue";
 
 const customers = ref<any[]>([]);
 const employees = ref<any[]>([]);
@@ -11,19 +11,29 @@ const error = ref<string | null>(null);
 
 // popup state
 const showUpdatePopup = ref(false);
-const selectedCustomer = ref<any | null>(null);
+const selectedEntity = ref<any | null>(null);
+const selectedType = ref<"customer" | "employee" | null>(null);
 
 const currentPage = ref(1);
 const pageSize = 5;
 const totalCustomers = ref(0);
 
-
-function openUpdatePopup(customer: any) {
-  selectedCustomer.value = { ...customer };
+function openCustomerUpdatePopup(customer: any) {
+  selectedEntity.value = { ...customer };
+  selectedType.value = "customer";
   showUpdatePopup.value = true;
 }
+
+function openEmployeeUpdatePopup(employee: any) {
+  selectedEntity.value = { ...employee };
+  selectedType.value = "employee";
+  showUpdatePopup.value = true;
+}
+
 function closeUpdatePopup() {
   showUpdatePopup.value = false;
+  selectedEntity.value = null;
+  selectedType.value = null;
 }
 
 const totalCustomerPages = computed(() =>
@@ -38,13 +48,13 @@ function goToCustomerPage(page: number) {
 }
 
 
-function handleUpdated(updatedCustomer: any) {
+function handleCustomerUpdated(updatedCustomer: any) {
   const index = customers.value.findIndex(c => c.National_ID === updatedCustomer.National_ID);
   if (index !== -1) {
     customers.value[index] = updatedCustomer; // update table row
   }
 }
-function handleDeleted(id: number) {
+function handleCustoemerDeleted(id: number) {
   customers.value = customers.value.filter(c => c.National_ID !== id);
 }
 
@@ -149,7 +159,7 @@ function prevPage() {
                             <td class="py-2 px-4">{{ c.Email }}</td>
                             <td class="py-2 px-4">
                                 <button
-                                    @click="openUpdatePopup(c)"
+                                    @click="openCustomerUpdatePopup(c)"
                                     class="text-blue-600 hover:text-blue-800"
                                 >
                                     Edit
@@ -158,15 +168,6 @@ function prevPage() {
                         </tr>
                     </tbody>
                 </table>
-                <UpdateCustomerPopUp
-                    v-if="showUpdatePopup"
-                    :show="showUpdatePopup"
-                    title="Edit Customer"
-                    :customer="selectedCustomer"
-                    @close="closeUpdatePopup"
-                    @updated="handleUpdated"
-                    @deleted="handleDeleted"
-                />
             </div>
             <div class="flex justify-center items-center mt-4 space-x-2">
               <button
@@ -208,10 +209,11 @@ function prevPage() {
             <table class=" w-full text-sm">
                 <thead class="bg-gray-100 text-gray-700">
                     <tr>
-                    <th class="py-2 px-4 text-left">ID</th>
-                    <th class="py-2 px-4 text-left">First Name</th>
-                    <th class="py-2 px-4 text-left">Last Name</th>
-                    <th class="py-2 px-4 text-left">Is Admin</th>
+                      <th class="py-2 px-4 text-left">ID</th>
+                      <th class="py-2 px-4 text-left">First Name</th>
+                      <th class="py-2 px-4 text-left">Last Name</th>
+                      <th class="py-2 px-4 text-left">Is Admin</th>
+                      <th class="py-2 px-4 text-left">Edit</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -224,6 +226,14 @@ function prevPage() {
                             <td class="py-2 px-4">{{ e.EmName }}</td>
                             <td class="py-2 px-4">{{ e.EmSurName }}</td>
                             <td class="py-2 px-4">{{ e.IsAdmin }}</td>
+                            <td class="py-2 px-4">
+                                <button
+                                    @click="openEmployeeUpdatePopup(e)"
+                                    class="text-blue-600 hover:text-blue-800"
+                                >
+                                    Edit
+                                </button>
+                            </td>
                         </tr>
                 </tbody>
             </table>
@@ -255,6 +265,17 @@ function prevPage() {
             Next
           </button>
         </div>
+
+        <UpdateEntityPopUp
+          v-if="showUpdatePopup"
+          :show="showUpdatePopup"
+          :entityType="selectedType"
+          :title="selectedType === 'customer' ? 'Edit Customer' : 'Edit Employee'"
+          :entity="selectedEntity"
+          @close="closeUpdatePopup"
+          @updated="selectedType === 'customer' ? handleCustomerUpdated : fetchEmployees"
+          @deleted="selectedType === 'customer' ? handleCustoemerDeleted : fetchEmployees"
+        />
 
       </div>
     </div>

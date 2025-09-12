@@ -1,4 +1,4 @@
-from supabase_auth import BaseModel
+from supabase_auth import BaseModel, Optional
 
 class EmployeeCreate(BaseModel):
     employeeId: int
@@ -14,3 +14,9 @@ class EmployeeLogin(BaseModel):
 class VerifyPasswordRequest(BaseModel):
     emId: int
     password: str
+
+class EmployeeUpdate(BaseModel):
+    EmName: str
+    EmSurName: str
+    IsAdmin: bool
+    EmPass: Optional[str] = None

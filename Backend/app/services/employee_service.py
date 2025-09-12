@@ -1,7 +1,7 @@
 import datetime
 from fastapi import HTTPException
 from configs.settings import supabase, pwd_context
-from models.employee_models import EmployeeCreate, EmployeeLogin, VerifyPasswordRequest
+from models.employee_models import EmployeeCreate, EmployeeLogin, EmployeeUpdate, VerifyPasswordRequest
 
 def list_employees_service(page: int = 1, page_size: int = 10):
     try:
@@ -111,4 +111,31 @@ def verify_password_service(payload: VerifyPasswordRequest):
         raise HTTPException(status_code=401, detail="Invalid password")
     
     return {"valid": True}
+
+def update_employee_service(em_id: int, employee: EmployeeUpdate):
+    # Build update payload (only non-null fields)
+    update_data = {k: v for k, v in employee.model_dump().items() if v is not None}
+
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No data provided for update")
+    
+    if "EmPass" in update_data:
+        # Hash password using the same pwd_context as registration
+        update_data["EmPass"] = pwd_context.hash(update_data["EmPass"])
+
+    # Update employee in Supabase
+    response = supabase.table("Employees").update(update_data).eq("EmID", em_id).execute()
+
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Employee not found")
+
+    return {"message": "Employee updated successfully", "data": response.data}
+
+def delete_employee_service(em_id: int):
+    response = supabase.table("Employees").delete().eq("EmID", em_id).execute()
+    
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Employees not found")
+    
+    return {"message": "Employees deleted successfully"}
 

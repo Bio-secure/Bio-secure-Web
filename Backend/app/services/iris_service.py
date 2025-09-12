@@ -53,7 +53,7 @@ def extract_iris_features(image_path: str):
     code, mask = encode_iris(polar_array, noise)
     return code, mask 
 
-def match_iris(features1, features2, threshold=0.05):
+def match_iris(features1, features2, threshold=0.1):
     code1, mask1 = features1
     code2, mask2 = features2
 
