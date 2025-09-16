@@ -171,7 +171,7 @@ async def update_customer(customer_id: int, customer: CustomerUpdate):
 
 @app.delete("/customers/{customer_id}")
 def delete_customer(customer_id: int):
-    return delete_employee_service(customer_id) 
+    return delete_customer_service(customer_id) 
 
 @app.put("/employees/{em_id}")
 async def update_employee(em_id: int, employee: EmployeeUpdate):

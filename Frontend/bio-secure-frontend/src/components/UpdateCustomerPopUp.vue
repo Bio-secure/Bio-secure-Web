@@ -83,10 +83,11 @@ export default {
 
     async deleteEntity() {
       try {
+        console.log("Deleting entityType:", this.entityType, "ID:", this.localEntity);
         if (this.entityType === "employee") {
           await axios.delete(`http://localhost:8000/employees/${this.localEntity.EmID}`);
           this.$emit("deleted", this.localEntity.EmID);
-        } else {
+        } else if (this.entityType === "customer") {
           await axios.delete(`http://localhost:8000/customers/${this.localEntity.National_ID}`);
           this.$emit("deleted", this.localEntity.National_ID);
         }
