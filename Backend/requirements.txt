@@ -10,7 +10,6 @@ scikit-image
 scipy
 deepface
 tf-keras
-open-iris
 
 # Utilities
 tqdm
