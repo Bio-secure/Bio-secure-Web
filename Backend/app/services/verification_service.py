@@ -103,7 +103,8 @@ async def verify_customer_identity_service(
     background_tasks: BackgroundTasks,
     face_image: UploadFile = None,
     left_iris_image: UploadFile = None,
-    right_iris_image: UploadFile = None
+    right_iris_image: UploadFile = None,
+    iris_threshold: float = 0.35  # adjustable threshold
 ):
     if not national_id.isdigit():
         raise HTTPException(status_code=404, detail="Invalid National ID")
@@ -119,29 +120,51 @@ async def verify_customer_identity_service(
     surname = customer.get("SurName", "Customer")
     email = customer.get("Email")
 
-    # Face Verification
-    face_result = await verify_face(national_id, face_image) if face_image else {"is_authenticated": False, "message": "No face image provided.", "distance": None}
+    # --- Face Verification ---
+    face_result = await verify_face(national_id, face_image) if face_image else {
+        "is_authenticated": False, "message": "No face image provided.", "distance": None
+    }
 
-    # Iris Verification
+    # --- Iris Verification ---
     left_result = await verify_single_iris(national_id, left_iris_image, "left")
     right_result = await verify_single_iris(national_id, right_iris_image, "right")
 
-    # Combine results
-    overall_verified = face_result["is_authenticated"]
-    if left_iris_image and right_iris_image:
-        overall_verified = overall_verified and left_result["is_authenticated"] and right_result["is_authenticated"]
-    elif left_iris_image or right_iris_image:
-        overall_verified = False  # Fail if only one iris provided
+    # --- Combine Iris Results with Weighting ---
+    iris_verified = False
+    iris_distances = []
+    if left_iris_image and left_result.get("distance") is not None:
+        iris_distances.append(left_result["distance"])
+    if right_iris_image and right_result.get("distance") is not None:
+        iris_distances.append(right_result["distance"])
 
-    # Log failure
+    if iris_distances:
+        avg_iris_distance = sum(iris_distances) / len(iris_distances)
+        iris_verified = avg_iris_distance < iris_threshold
+    else:
+        avg_iris_distance = None  # No iris data
+
+    # --- Overall Verification ---
+    overall_verified = face_result["is_authenticated"]
+    if iris_distances:
+        overall_verified = overall_verified and iris_verified
+
+    # --- Update iris messages ---
+    if left_iris_image:
+        left_result["is_authenticated"] = left_result.get("distance", 1.0) < iris_threshold
+        left_result["message"] = f"Left Iris Verified" if left_result["is_authenticated"] else f"Left Iris Verification Failed"
+    if right_iris_image:
+        right_result["is_authenticated"] = right_result.get("distance", 1.0) < iris_threshold
+        right_result["message"] = f"Right Iris Verified" if right_result["is_authenticated"] else f"Right Iris Verification Failed"
+
+    # --- Log failure ---
     if not overall_verified:
         await log_failure(national_id, name, surname)
 
-    # Email report
+    # --- Email report ---
     if email:
         biometric_type = ", ".join(filter(None, [
             "face" if face_image else None,
-            "iris" if left_iris_image or right_iris_image else None
+            "iris" if iris_distances else None
         ]))
         background_tasks.add_task(
             send_authentication_report_email,
@@ -155,5 +178,5 @@ async def verify_customer_identity_service(
     return {
         "verified": overall_verified,
         "message": "Verification Succeeded" if overall_verified else "Verification Failed",
-        "details": {"face": face_result, "left_iris": left_result, "right_iris": right_result},
+        "details": {"face": face_result, "left_iris": left_result, "right_iris": right_result, "avg_iris_distance": avg_iris_distance},
     }
