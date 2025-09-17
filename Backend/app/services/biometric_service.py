@@ -195,9 +195,9 @@ async def register_biometric_iris_service(national_id: str, left_image: UploadFi
     payload = {
         "National_ID": int(national_id),
         "iris_left_image_url": iris_data["left_iris"]["url"],
-        "iris_left_embedding": json.dumps(iris_data["left_iris"]["embedding"]) if iris_data["left_iris"]["embedding"] else None,
+        "iris_left_embedding": iris_data["left_iris"]["embedding"] if iris_data["left_iris"]["embedding"] else None,
         "iris_right_image_url": iris_data["right_iris"]["url"],
-        "iris_right_embedding": json.dumps(iris_data["right_iris"]["embedding"]) if iris_data["right_iris"]["embedding"] else None,
+        "iris_right_embedding": iris_data["left_iris"]["embedding"] if iris_data["right_iris"]["embedding"] else None,
     }
 
     # Step 3: Upsert the data to Supabase

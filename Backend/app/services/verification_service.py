@@ -1,19 +1,25 @@
+import os
 import json
-import os, base64, datetime, aiofiles
+import datetime
+import aiofiles
+import numpy as np
 import cv2
 from fastapi import HTTPException, UploadFile, BackgroundTasks
 from fastapi.concurrency import run_in_threadpool
-import httpx
-import numpy as np
-
-from services.biometric_service import preprocess_iris
 from services.face_service import authenticate_face_from_api
-from configs.settings import supabase, IRIS_MODEL_API_URL
-from utils.email_utils import send_authentication_report_email
-from scipy.spatial.distance import cosine
 from services.iris_service import extract_iris_features, match_iris
+from configs.settings import supabase
+from utils.email_utils import send_authentication_report_email
 
 # --- Helpers ---
+async def save_temp_file(upload: UploadFile, suffix: str):
+    os.makedirs("temp", exist_ok=True)
+    ext = upload.filename.split('.')[-1]
+    path = os.path.join("temp", f"{suffix}.{ext}")
+    contents = await upload.read()
+    async with aiofiles.open(path, "wb") as f:
+        await f.write(contents)
+    return path
 
 async def fetch_customer(customer_id: int):
     response = await run_in_threadpool(
@@ -23,33 +29,7 @@ async def fetch_customer(customer_id: int):
                         .single()
                         .execute()
     )
-    if not response.data:
-        return None
-    return response.data
-
-
-async def save_temp_file(upload: UploadFile, suffix: str):
-    try:
-        # Define a temporary directory at the project root
-        temp_dir = "temp"
-        os.makedirs(temp_dir, exist_ok=True)
-        
-        # Build the file path using a unique name and the temporary directory
-        ext = upload.filename.split('.')[-1]
-        file_path = os.path.join(temp_dir, f"{suffix}_query.{ext}")
-        
-        # Asynchronously read the file content
-        contents = await upload.read()
-        
-        # Asynchronously write the file content to the temp path
-        async with aiofiles.open(file_path, "wb") as f:
-            await f.write(contents)
-            
-        return file_path
-    except Exception as e:
-        # Re-raise the exception with a more descriptive error message
-        raise Exception(f"Failed to save temporary file: {e}")
-
+    return response.data if response.data else None
 
 async def log_failure(customer_id, name, surname):
     payload = {
@@ -61,170 +41,119 @@ async def log_failure(customer_id, name, surname):
     }
     await run_in_threadpool(lambda: supabase.table("CustomerLogs").insert([payload]).execute())
 
-# --- Main service ---
-async def verify_customer_identity_service(national_id: str,
-                                           background_tasks: BackgroundTasks,
-                                           face_image: UploadFile = None,
-                                           left_iris_image: UploadFile = None,
-                                           right_iris_image: UploadFile = None):
-    # Validate National ID
-    if not national_id.isdigit() or national_id is None:
-        raise HTTPException(status_code=404, detail="Invalid National ID")
+# --- Iris Verification ---
+async def verify_single_iris(customer_id: str, image: UploadFile, eye_type: str):
+    if not image:
+        return {"is_authenticated": False, "message": f"No {eye_type} iris image provided.", "distance": None}
 
-    # Require at least one image
+    path = await save_temp_file(image, f"{customer_id}_{eye_type}_iris")
+    try:
+        # Preprocess + extract features
+        img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+        img = cv2.equalizeHist(img)
+        img = cv2.resize(img, (240, 240))
+        uploaded_features = await run_in_threadpool(extract_iris_features, path)
+
+        # Load stored embedding from Supabase
+        db_response = await run_in_threadpool(
+            lambda: supabase.table("Biometric")
+            .select(f"iris_{eye_type}_embedding")
+            .eq("National_ID", customer_id)
+            .single()
+            .execute()
+        )
+        stored_features = db_response.data.get(f"iris_{eye_type}_embedding")
+        if not stored_features:
+            return {"is_authenticated": False, "message": f"No stored {eye_type} iris.", "distance": None}
+
+        if isinstance(stored_features, str):
+            stored_features = json.loads(stored_features)
+
+        s_code = np.array(stored_features["code"], dtype=np.uint8)
+        s_mask = np.array(stored_features["mask"], dtype=np.uint8)
+        stored_features_tuple = (s_code, s_mask)
+
+        match_details = match_iris(uploaded_features, stored_features_tuple)
+
+        return {
+            "is_authenticated": match_details["is_match"],
+            "distance": match_details["distance"],
+            "message": f"{eye_type.capitalize()} Iris Verified" if match_details["is_match"] else f"{eye_type.capitalize()} Iris Verification Failed"
+        }
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
+
+# --- Face Verification ---
+async def verify_face(customer_id: int, face_image: UploadFile):
+    if not face_image:
+        return {"is_authenticated": False, "message": "No face image provided."}
+
+    path = await save_temp_file(face_image, f"{customer_id}_face")
+    try:
+        details = await authenticate_face_from_api(customer_id, path)
+        return {"is_authenticated": details.get("is_authenticated", False), "details": details, "message": "Face Verified" if details.get("is_authenticated") else "Face Verification Failed"}
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
+
+# --- Main Verification Service ---
+async def verify_customer_identity_service(
+    national_id: str,
+    background_tasks: BackgroundTasks,
+    face_image: UploadFile = None,
+    left_iris_image: UploadFile = None,
+    right_iris_image: UploadFile = None
+):
+    if not national_id.isdigit():
+        raise HTTPException(status_code=404, detail="Invalid National ID")
     if not any([face_image, left_iris_image, right_iris_image]):
         raise HTTPException(status_code=400, detail="At least one image must be provided")
 
-    # Validate file contents + MIME type
-    for img in [face_image, left_iris_image, right_iris_image]:
-        if img:
-            contents = await img.read()
-            if not contents:
-                raise HTTPException(status_code=400, detail=f"{img.filename} is empty")
-            if not img.content_type.startswith("image/"):
-                raise HTTPException(status_code=400, detail=f"{img.filename} is not a valid image")
-            await img.seek(0)
-
-    # Fetch customer
     customer = await fetch_customer(national_id)
     if not customer:
         await log_failure(national_id, "Unknown", "Unknown")
-        raise HTTPException(404, detail="Invalid National ID")
+        raise HTTPException(status_code=404, detail="Customer not found")
 
-    customer_name = customer.get("Name", "Unknown")
-    customer_surname = customer.get("SurName", "Customer")
-    customer_email = customer.get("Email")
+    name = customer.get("Name", "Unknown")
+    surname = customer.get("SurName", "Customer")
+    email = customer.get("Email")
 
-    # Perform verifications
-    face_result = await verify_face(national_id, face_image) if face_image else {"is_authenticated": False, "message": "No face image provided."}
-    iris_results = await verify_iris(
-        national_id,
-        left_iris_images=[left_iris_image] if left_iris_image else None,
-        right_iris_images=[right_iris_image] if right_iris_image else None
-    )
+    # Face Verification
+    face_result = await verify_face(national_id, face_image) if face_image else {"is_authenticated": False, "message": "No face image provided.", "distance": None}
 
-    # Determine overall verification
+    # Iris Verification
+    left_result = await verify_single_iris(national_id, left_iris_image, "left")
+    right_result = await verify_single_iris(national_id, right_iris_image, "right")
+
+    # Combine results
     overall_verified = face_result["is_authenticated"]
-
-    # If both iris images provided, require both to match
     if left_iris_image and right_iris_image:
-        overall_verified = overall_verified and iris_results["left"]["is_authenticated"] and iris_results["right"]["is_authenticated"]
-
-    # If only one iris image provided, fail verification
+        overall_verified = overall_verified and left_result["is_authenticated"] and right_result["is_authenticated"]
     elif left_iris_image or right_iris_image:
-        overall_verified = False
+        overall_verified = False  # Fail if only one iris provided
 
-    # Log failure if verification fails
+    # Log failure
     if not overall_verified:
-        await log_failure(national_id, customer_name, customer_surname)
+        await log_failure(national_id, name, surname)
 
-    # Prepare final details
-    final_details = {
-        "face": face_result,
-        "left_iris": iris_results["left"],
-        "right_iris": iris_results["right"]
-    }
-
-    # Send email report
-    if customer_email:
-        biometric_type = " and ".join(
-            filter(None, [
-                face_image and "face",
-                (left_iris_image or right_iris_image) and "iris"
-            ])
-        )
+    # Email report
+    if email:
+        biometric_type = ", ".join(filter(None, [
+            "face" if face_image else None,
+            "iris" if left_iris_image or right_iris_image else None
+        ]))
         background_tasks.add_task(
             send_authentication_report_email,
-            customer_email,
-            f"{customer_name} {customer_surname}".strip(),
+            email,
+            f"{name} {surname}".strip(),
             biometric_type,
             overall_verified,
-            final_details,
+            {"face": face_result, "left_iris": left_result, "right_iris": right_result},
         )
 
     return {
         "verified": overall_verified,
         "message": "Verification Succeeded" if overall_verified else "Verification Failed",
-        "details": final_details,
+        "details": {"face": face_result, "left_iris": left_result, "right_iris": right_result},
     }
-
-# --- Extracted Helpers ---
-
-async def verify_face(customer_id: int, face_image: UploadFile):
-    if not face_image:
-        raise HTTPException(status_code=422, detail="Please make sure that there's image at all.")
-        return {"is_authenticated": False, "details": {}}
-
-    path = await save_temp_file(face_image, f"{customer_id}_face")
-    try:
-        details = await authenticate_face_from_api(customer_id, path) or {}
-        return {"is_authenticated": details.get("is_authenticated", False), "details": details}
-    finally:
-        if os.path.exists(path):
-            os.remove(path)
-
-
-async def verify_iris(customer_id: str, left_iris_images: list = None, right_iris_images: list = None):
-    results = {
-        "left": {"is_authenticated": False, "message": "No left iris image provided.", "distance": None},
-        "right": {"is_authenticated": False, "message": "No right iris image provided.", "distance": None},
-    }
-
-    async def process_eye(images_list, eye_type):
-        if not images_list:
-            return {"is_authenticated": False, "message": f"No {eye_type} iris image provided.", "distance": None}
-
-        distances = []
-        for img in images_list:
-            path = await save_temp_file(img, f"{customer_id}_{eye_type}_iris")
-            try:
-                preprocessed_img = preprocess_iris(path)
-                cv2.imwrite(path, preprocessed_img)
-
-                uploaded_features = await run_in_threadpool(extract_iris_features, path)
-                if not uploaded_features:
-                    continue
-
-                u_code, u_mask = uploaded_features
-
-                db_response = await run_in_threadpool(
-                    lambda: supabase.table("Biometric")
-                    .select(f"iris_{eye_type}_embedding")
-                    .eq("National_ID", customer_id)
-                    .single()
-                    .execute()
-                )
-
-                stored_features = db_response.data.get(f"iris_{eye_type}_embedding")
-                if not stored_features:
-                    continue
-
-                if isinstance(stored_features, str):
-                    stored_features = json.loads(stored_features)
-                s_code = np.array(stored_features["code"], dtype=np.uint8)
-                s_mask = np.array(stored_features["mask"], dtype=np.uint8)
-                stored_features = (s_code, s_mask)
-
-                match_details = match_iris(uploaded_features, stored_features)
-                distances.append(match_details["distance"])
-
-            finally:
-                if os.path.exists(path):
-                    os.remove(path)
-
-        if not distances:
-            return {"is_authenticated": False, "message": f"{eye_type.capitalize()} Iris Verification Failed", "distance": None}
-
-        # Average distance across frames
-        avg_distance = sum(distances) / len(distances)
-        is_match = avg_distance < 0.35  # choose threshold experimentally
-
-        return {
-            "is_authenticated": is_match,
-            "distance": avg_distance,
-            "message": f"{eye_type.capitalize()} Iris Verified" if is_match else f"{eye_type.capitalize()} Iris Verification Failed"
-        }
-
-    results["left"] = await process_eye(left_iris_images, "left")
-    results["right"] = await process_eye(right_iris_images, "right")
-    return results
