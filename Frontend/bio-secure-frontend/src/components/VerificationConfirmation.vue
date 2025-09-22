@@ -77,17 +77,9 @@ const emit = defineEmits(["close"]);
             </span>
           </p>
 
-          <!-- Left Iris -->
-          <p v-if="details.left_iris?.message && !details.left_iris.message.includes('No left iris image provided')">
-            <strong>Left Iris:</strong> {{ details.left_iris.message }} 
-            <span v-if="details.left_iris.distance !== undefined">
-              Distance: {{ ((1 - details.left_iris.distance) * 100).toFixed(1) }}%
-            </span>
-          </p>
-
           <!-- Right Iris -->
           <p v-if="details.right_iris?.message && !details.right_iris.message.includes('No right iris image provided')">
-            <strong>Right Iris:</strong> {{ details.right_iris.message }} 
+            <strong>Average Iris Weight</strong> {{ details.right_iris.message }} 
             <span v-if="details.right_iris.distance !== undefined">
               Distance: {{ ((1 - details.right_iris.distance) * 100).toFixed(1) }}%
             </span>
