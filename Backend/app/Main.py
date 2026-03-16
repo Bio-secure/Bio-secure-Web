@@ -1,0 +1,182 @@
+from io import BytesIO
+from fastapi import HTTPException
+from typing import Optional
+from fastapi import FastAPI, Form, UploadFile, File, BackgroundTasks, Query
+from fastapi.middleware.cors import CORSMiddleware
+from PIL import Image
+
+from configs.settings import supabase
+
+
+from models.customer_model import CustomerUpdate
+from models.employee_models import EmployeeCreate, EmployeeLogin, EmployeeUpdate, VerifyPasswordRequest
+from models.transaction_models import TransactionCreate
+from services.biometric_service import register_biometric_face_service, register_biometric_iris_service
+from services.customer_service import delete_customer_service, get_customer_details_service, list_customers_service, list_customers_service_page, update_customer_service
+from services.employee_service import delete_employee_service, list_employees_service, login_employee_service, register_employee_service, update_employee_service, verify_password_service
+from services.report_service import get_customer_logs_service, get_employee_logs_service, get_registration_records_service, get_registration_stats_service
+from services.transaction_service import create_transaction_service
+from services.user_service import register_user_service
+from services.verification_service import verify_customer_identity_service
+
+app = FastAPI()
+
+origins = [
+    "http://localhost:5173", 
+    "http://127.0.0.1:5173", 
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+async def validate_image(img: UploadFile):
+    """
+    Validate that the uploaded file is a non-empty image with a correct MIME type.
+    Raise 400 if invalid.
+    """
+    if not img:
+        raise HTTPException(status_code=400, detail="Image file is required")
+
+    contents = await img.read()
+    if not contents:
+        raise HTTPException(status_code=400, detail=f"{img.filename} is empty")
+
+    if not img.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail=f"{img.filename} is not a valid image")
+
+    # Try opening the image to ensure it's valid
+    try:
+        Image.open(BytesIO(contents)).verify()
+    except Exception:
+        raise HTTPException(status_code=400, detail=f"{img.filename} is not a valid image")
+
+    await img.seek(0)
+
+@app.get("/")
+def root():
+    return {"message": "FastAPI is running!"}
+
+@app.post("/register-biometric-face")
+async def register_face_biometric(
+    national_id: str = Form(...),
+    face_image: UploadFile = File(...)
+):
+    return await register_biometric_face_service(national_id, face_image)
+
+@app.post("/register-biometric-iris")
+async def register_iris_biometric(
+    national_id: str = Form(...),
+    left_image: UploadFile = File(...),
+    right_image: UploadFile = File(...)
+):
+    return await register_biometric_iris_service(national_id, left_image, right_image)
+    
+@app.post("/verify")
+async def verify_customer_identity(
+    national_id: str = Form(...),
+    background_tasks: BackgroundTasks = None,
+    face_image: UploadFile = File(None),
+    left_image: UploadFile = File(None),
+    right_image: UploadFile = File(None)
+):
+    for img in [face_image, left_image, right_image]:
+        if img:
+            await validate_image(img)
+            
+    try:
+        return await verify_customer_identity_service(
+            national_id=national_id,
+            background_tasks=background_tasks,
+            face_image=face_image,
+            left_iris_image=left_image,
+            right_iris_image=right_image
+        )
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
+
+@app.get("/customer-details/{customer_id}")
+def get_customer_details(customer_id: int):
+    return get_customer_details_service(customer_id)
+
+@app.get("/customers-page")
+def list_customers(page: int = 1, page_size: int = 10):
+    return list_customers_service_page(page, page_size)
+
+@app.get("/customers")
+def list_all_customers():
+    return list_customers_service()
+
+@app.get("/employees")
+def get_employees(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
+):
+    return list_employees_service(page, page_size)
+
+@app.post("/register-employee")
+def register_employee(employee_data: EmployeeCreate):
+    return register_employee_service(employee_data)
+
+@app.post("/login-employee")
+def login_employee(employee_login_data: EmployeeLogin):
+    return login_employee_service(employee_login_data)
+
+@app.post("/register-user")
+def register_user(user_data: dict):
+    return register_user_service(user_data)
+
+@app.post("/transaction")
+def create_transaction(transaction: TransactionCreate):
+    return create_transaction_service(transaction)
+
+@app.get("/registration-records")
+def get_registration_records():
+    return get_registration_records_service()
+
+@app.get("/registration-stats")
+def get_registration_stats():
+    return get_registration_stats_service()
+
+@app.get("/customer-logs")
+def get_customer_logs(show_all: Optional[bool] = Query(False), period: Optional[str] = Query(None)):
+    return get_customer_logs_service(show_all, period)
+
+@app.get("/employee-logs")
+def get_employee_logs(period: Optional[str] = Query(None)):
+    return get_employee_logs_service(period)
+
+    
+@app.get("/debug")
+def debug():
+    response = supabase.table("Customer").select("*").limit(2).execute()
+    print("DEBUG DATA:", response.data)
+    return response.data
+
+@app.post("/verify-password")
+def verify_password(payload: VerifyPasswordRequest):
+    return verify_password_service(payload)
+
+## Supabase CRUD Utility Endpoints
+
+@app.put("/customers/{customer_id}")
+async def update_customer(customer_id: int, customer: CustomerUpdate):
+    return update_customer_service(customer_id, customer)
+
+@app.delete("/customers/{customer_id}")
+def delete_customer(customer_id: int):
+    return delete_customer_service(customer_id) 
+
+@app.put("/employees/{em_id}")
+async def update_employee(em_id: int, employee: EmployeeUpdate):
+    return update_employee_service(em_id, employee)
+
+@app.delete("/employees/{em_id}")
+def delete_employee(em_id: int):
+    return delete_employee_service(em_id) 

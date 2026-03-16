@@ -1,18 +1,19 @@
 <script setup lang="ts">
 import NavBar from './components/NavBar.vue';
+import { RouterView } from 'vue-router';
 </script>
 
 <template>
-  <div class="app-container">
-    <!-- Faint background image layer -->
-    <div class="background-image"></div>
+  <div class="app-container min-h-screen">
+    <div class="background-pattern"></div>
 
-    <!-- Foreground content -->
     <div class="content">
-      <header>
+      <header v-if="$route.name !== 'login'" class="fixed top-0 left-0 w-full z-20 shadow-sm bg-white">
         <NavBar />
       </header>
-      <RouterView />
+      <main class="relative w-full mx-auto pt-15">
+        <RouterView />
+      </main>
     </div>
   </div>
 </template>
@@ -21,25 +22,29 @@ import NavBar from './components/NavBar.vue';
 .app-container {
   position: relative;
   min-height: 100vh;
-  overflow: hidden;
+  background-color: #f7f9fc; 
+  overflow-x: hidden; 
 }
 
-.background-image {
+.background-pattern {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-image: url('./assets/bank.jpg');
-  background-size: cover;
-  background-position: center;
-  opacity: 0.15; /* Faint effect */
+  inset: 0;
   z-index: 0;
-  pointer-events: none;
+  overflow: hidden;
+  
+  background-color: #f7f9fc;
+  background-image: 
+    radial-gradient(circle at 15% 20%, rgba(200, 220, 255, 0.4), transparent 50%),
+    radial-gradient(circle at 85% 80%, rgba(220, 240, 255, 0.5), transparent 60%);
+  background-repeat: no-repeat;
+  background-size: cover;
 }
+
 
 .content {
+  /* Content is positioned on top of the background pattern */
   position: relative;
-  z-index: 1; /* Places it above the image */
+  z-index: 1; 
+  background-color: transparent;
 }
 </style>
