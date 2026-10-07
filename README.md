@@ -354,11 +354,10 @@ The dataset is not included in the repository (see `.gitignore`). Download it fr
 
 | Name | Role |
 |---|---|
-| Philip Housden | _[role]_ |
-| Anuphat Manotam | _[role]_ |
-| _[member]_ | _[role]_ |
+| Philip Housden | Full-Stack Developer |
+| Anuphat Manotam | Full-Stack Developer |
 
-**Advisor:** _[Advisor name]_
+**Advisor:** Dr. Pikul Vejjanugraha
 
 ---
 
